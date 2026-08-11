@@ -8,7 +8,11 @@ its own Render web service on the free tier.
 
 - Lobby → Waiting Room → Edit → Accept flow, fully working over real
   Socket.io connections (not simulated locally).
-- First player to join becomes host.
+- Host is PIN-gated, not join-order — anyone who's joined can tap the
+  Admin button and enter the host PIN (`8888` by default, change it in
+  server.js) to become host. Matches poker's own "🔒 Host PIN Required"
+  pattern. Works even to reclaim host mid-setup if the original host's
+  connection drops for good.
 - Host taps Admin to start editing — joining locks at that moment.
 - Host's setting changes broadcast live to everyone still in the
   Waiting Room, in real time.

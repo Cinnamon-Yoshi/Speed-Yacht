@@ -31,9 +31,17 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // Single shared room — one game night at a time, matching poker's model.
 // Reset to this shape whenever the last player leaves, so a fresh game
 // night always starts clean.
+
+// Same PIN-gated admin model poker already uses ("🔒 Host PIN Required").
+// Host is no longer "whoever happened to join first" — the actual host
+// (running game night) might join 2nd, 3rd, or 4th. Anyone who joins can
+// tap Admin and enter this PIN to become/reclaim host.
+const HOST_PIN = '8888';
+
 function freshState() {
   return {
-    players: [],       // [{ id, name }] — order = join order; players[0] is host
+    players: [],       // [{ id, name }]
+    hostId: null,        // set only once someone enters the correct PIN
     phase: 'lobby',     // 'lobby' | 'editing' | 'accepting' | 'playing'
     settings: {
       rollsPerTurn: 5,
@@ -48,17 +56,14 @@ function freshState() {
 }
 let state = freshState();
 
-function hostId() {
-  return state.players[0] ? state.players[0].id : null;
-}
 function isHost(socketId) {
-  return socketId === hostId();
+  return socketId !== null && socketId === state.hostId;
 }
 function publicState() {
   // What every client receives — never send anything socket-internal.
   return {
     players: state.players.map(p => ({ id: p.id, name: p.name, connected: p.connected })),
-    hostId: hostId(),
+    hostId: state.hostId,
     phase: state.phase,
     settings: state.settings,
     accepted: state.accepted
@@ -77,6 +82,7 @@ const RECONNECT_GRACE_MS = 60000;
 function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
   delete state.accepted[playerId];
+  if (state.hostId === playerId) state.hostId = null; // free up host for someone else to claim
   if (state.players.length === 0) {
     state = freshState();
   } else {
@@ -121,6 +127,7 @@ io.on('connection', (socket) => {
       const hadAccepted = !!state.accepted[existing.id];
       if (existing.id !== socket.id) {
         delete state.accepted[existing.id];
+        if (wasHost) state.hostId = socket.id; // keep host pointed at the same person, not their stale old socket
         existing.id = socket.id;
         if (hadAccepted) state.accepted[socket.id] = true;
       }
@@ -140,7 +147,35 @@ io.on('connection', (socket) => {
     }
 
     state.players.push({ id: socket.id, name, connected: true, disconnectTimer: null });
-    socket.emit('joined', { id: socket.id, isHost: isHost(socket.id) });
+    socket.emit('joined', { id: socket.id, isHost: false });
+    broadcastState();
+  });
+
+  // Anyone who's joined can tap Admin and enter the PIN — this is what
+  // actually grants host powers now, not join order. Works at any point
+  // before gameplay starts, so if the wrong PIN got tried, or the actual
+  // host joined 3rd instead of 1st, or the current host's phone died and
+  // someone else needs to take over, any correct-PIN entry re-points
+  // host at whoever just entered it.
+  socket.on('claim_host', (pin) => {
+    const player = state.players.find(p => p.id === socket.id);
+    if (!player) return; // must have joined first
+    if (state.phase === 'playing') {
+      socket.emit('host_claim_result', { success: false, message: 'Game already in progress.' });
+      return;
+    }
+    if (pin !== HOST_PIN) {
+      socket.emit('host_claim_result', { success: false, message: 'Incorrect PIN.' });
+      return;
+    }
+    state.hostId = socket.id;
+    // Claiming host from the lobby also kicks off editing in the same
+    // step — matches the original single-tap flow, just PIN-gated now.
+    // If host is being reclaimed mid-edit/mid-accept (e.g. the original
+    // host's phone died), leave the phase where it is — don't throw
+    // away progress just because host changed hands.
+    if (state.phase === 'lobby') state.phase = 'editing';
+    socket.emit('host_claim_result', { success: true });
     broadcastState();
   });
 
