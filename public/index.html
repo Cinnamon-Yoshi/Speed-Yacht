@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roatan Yahtzee</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='0' y='0' width='100' height='100' rx='20' fill='%230b3d2e'/><g transform='rotate(45 50 50)'><rect x='20' y='20' width='60' height='60' rx='12' fill='%23ffffff'/><circle cx='35' cy='35' r='7' fill='%230b3d2e'/><circle cx='65' cy='35' r='7' fill='%230b3d2e'/><circle cx='50' cy='50' r='7' fill='%230b3d2e'/><circle cx='35' cy='65' r='7' fill='%230b3d2e'/><circle cx='65' cy='65' r='7' fill='%230b3d2e'/></g></svg>">
+<style>
+  :root{ --bg:#0b3d2e; --gold:#d4af37; }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0; background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    color:#fff; display:flex; justify-content:center; padding:16px 10px 60px; min-height:100vh;
+  }
+  .wrap{max-width:430px;width:100%;}
+  .phone{ background:var(--bg); border-radius:20px; padding:16px; }
+  .h-title{ font-weight:800; font-size:1.3em; text-align:center; margin-bottom:2px; }
+  .h-sub{ opacity:0.6; font-size:0.85em; text-align:center; margin-bottom:18px; }
+
+  .screen{ display:none; }
+  .screen.active{ display:block; }
+
+  .lobby-input{
+    width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
+    color:#fff; font-weight:800; font-size:1em; padding:12px 14px; margin-bottom:14px; text-align:center;
+  }
+  .primary-btn{
+    width:100%; padding:14px; border:none; border-radius:12px; background:var(--gold); color:#111;
+    font-weight:900; font-size:1em; cursor:pointer;
+  }
+  .primary-btn:disabled{ opacity:0.5; cursor:default; }
+  .secondary-btn{
+    width:100%; padding:12px; border:1px solid rgba(255,255,255,0.3); border-radius:12px; background:none; color:#fff;
+    font-weight:700; font-size:0.9em; cursor:pointer; margin-top:10px;
+  }
+  .error-msg{ font-size:0.8em; color:#ff8c8c; text-align:center; margin-bottom:10px; min-height:1.2em; }
+
+  .player-row{
+    display:flex; justify-content:space-between; align-items:center; padding:10px 14px;
+    background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:8px; font-size:0.9em; font-weight:700;
+  }
+  .player-row .tag{ font-size:0.7em; font-weight:800; opacity:0.6; color:var(--gold); }
+  .waiting-msg{ text-align:center; font-size:0.85em; opacity:0.6; padding:16px; font-style:italic; }
+
+  .admin-btn{
+    width:100%; padding:10px; border:1px solid rgba(212,175,55,0.5); border-radius:10px; background:none;
+    color:var(--gold); font-weight:800; font-size:0.85em; cursor:pointer; margin-top:14px;
+  }
+
+  .gi-settings-box{
+    width:100%; background:rgba(0,0,0,0.25); border:1px solid rgba(212,175,55,0.3);
+    border-radius:12px; padding:14px; margin-bottom:16px; text-align:left;
+  }
+  .gi-setting-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; font-size:0.85em; font-weight:700; }
+  .gi-setting-row:last-child{ margin-bottom:0; }
+  .gi-setting-select{
+    background:rgba(255,255,255,0.08); border:1px solid rgba(212,175,55,0.5);
+    border-radius:6px; color:#fff; font-weight:800; font-size:0.95em;
+    padding:4px 8px; width:108px; text-align-last:center; cursor:pointer;
+  }
+  .gi-setting-value{ font-weight:800; color:var(--gold); }
+  .toggle{
+    width:40px; height:23px; border-radius:12px; background:rgba(255,255,255,0.15); position:relative; cursor:pointer;
+    transition:background .15s; flex:0 0 auto; border:1px solid rgba(212,175,55,0.5);
+  }
+  .toggle.on{ background:var(--gold); border-color:var(--gold); }
+  .toggle .knob{ position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#fff; transition:left .15s; }
+  .toggle.on .knob{ left:19px; background:#111; }
+
+  .status-msg{ text-align:center; font-size:0.82em; opacity:0.65; margin-top:12px; }
+  .conn-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:#ff6b6b; }
+  .conn-dot.connected{ background:#5fd38d; }
+  .conn-status{ text-align:center; font-size:0.7em; opacity:0.5; margin-bottom:12px; }
+</style>
+</head>
+<body>
+<div class="wrap"><div class="phone">
+
+  <div class="h-title">♠ Roatan Yahtzee</div>
+  <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
+
+  <!-- Lobby -->
+  <div class="screen active" id="screenLobby">
+    <div class="h-sub">Enter your name to join the game</div>
+    <div class="error-msg" id="lobbyError"></div>
+    <input class="lobby-input" id="nameInput" placeholder="Your name" maxlength="20">
+    <button class="primary-btn" id="joinBtn">Join</button>
+  </div>
+
+  <!-- Waiting Room -->
+  <div class="screen" id="screenWaiting">
+    <div class="h-sub">Waiting Room</div>
+    <div id="playerList"></div>
+    <div class="waiting-msg" id="waitingMsg">Waiting for host to start the game…</div>
+    <div class="gi-settings-box" id="liveSettingsBox" style="display:none;"></div>
+    <button class="admin-btn" id="adminBtn" style="display:none;">Admin — Start Setup</button>
+  </div>
+
+  <!-- Edit (host only) -->
+  <div class="screen" id="screenEdit">
+    <div class="h-sub">Game Settings (editing)</div>
+    <div class="gi-settings-box">
+      <div class="gi-setting-row"><span>Rolls per turn:</span>
+        <select class="gi-setting-select" id="editRolls">
+          <option value="3">3</option><option value="4">4</option><option value="5" selected>5</option>
+        </select>
+      </div>
+      <div class="gi-setting-row"><span>Round Advance:</span>
+        <select class="gi-setting-select" id="editAdvance">
+          <option value="When-Ready">When-Ready</option><option value="Full-30" selected>Full-30</option>
+        </select>
+      </div>
+      <div class="gi-setting-row"><span>Fill empty seats with bots:</span>
+        <div class="toggle on" id="editBotsToggle"><div class="knob"></div></div>
+      </div>
+    </div>
+    <button class="primary-btn" id="confirmSettingsBtn">Confirm — Send to Players</button>
+  </div>
+
+  <!-- Accept -->
+  <div class="screen" id="screenAccept">
+    <div class="h-sub">Confirm Game Settings</div>
+    <div class="gi-settings-box" id="acceptSettingsBox"></div>
+    <div id="acceptList"></div>
+    <button class="primary-btn" id="acceptBtn">Accept</button>
+    <button class="secondary-btn" id="editAgainBtn" style="display:none;">Edit Settings Again</button>
+  </div>
+
+  <!-- Playing (placeholder — Phase 3) -->
+  <div class="screen" id="screenPlaying">
+    <div class="h-sub">Game starting…</div>
+    <div class="status-msg">Everyone accepted — the actual gameplay screen is Phase 3, not built yet.</div>
+  </div>
+
+</div></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let myId = null;
+let amHost = false;
+let latestState = null;
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+socket.on('connect', () => {
+  document.getElementById('connDot').classList.add('connected');
+  document.getElementById('connText').textContent = 'Connected';
+});
+socket.on('disconnect', () => {
+  document.getElementById('connDot').classList.remove('connected');
+  document.getElementById('connText').textContent = 'Disconnected — reconnecting…';
+});
+
+document.getElementById('joinBtn').onclick = () => {
+  const name = document.getElementById('nameInput').value;
+  socket.emit('join_lobby', name);
+};
+socket.on('join_error', (msg) => {
+  document.getElementById('lobbyError').textContent = msg;
+});
+socket.on('joined', ({ id, isHost }) => {
+  myId = id;
+  amHost = isHost;
+  document.getElementById('lobbyError').textContent = '';
+});
+
+document.getElementById('adminBtn').onclick = () => socket.emit('host_start_editing');
+document.getElementById('confirmSettingsBtn').onclick = () => {
+  socket.emit('host_confirm_settings');
+};
+document.getElementById('acceptBtn').onclick = () => {
+  socket.emit('player_accept');
+  document.getElementById('acceptBtn').disabled = true;
+  document.getElementById('acceptBtn').textContent = 'Waiting on others…';
+};
+document.getElementById('editAgainBtn').onclick = () => socket.emit('host_edit_again');
+document.getElementById('editBotsToggle').onclick = function(){
+  this.classList.toggle('on');
+  emitLiveSettings();
+};
+['editRolls','editAdvance'].forEach(id => {
+  document.getElementById(id).onchange = emitLiveSettings;
+});
+function emitLiveSettings(){
+  socket.emit('host_update_settings', {
+    rollsPerTurn: parseInt(document.getElementById('editRolls').value, 10),
+    roundAdvance: document.getElementById('editAdvance').value,
+    fillWithBots: document.getElementById('editBotsToggle').classList.contains('on')
+  });
+}
+
+function renderSettingsReadout(settings){
+  return `
+    <div class="gi-setting-row"><span>Rolls per turn:</span><span class="gi-setting-value">${settings.rollsPerTurn}</span></div>
+    <div class="gi-setting-row"><span>Round Advance:</span><span class="gi-setting-value">${settings.roundAdvance}</span></div>
+    <div class="gi-setting-row"><span>Fill seats with bots:</span><span class="gi-setting-value">${settings.fillWithBots ? 'On' : 'Off'}</span></div>
+  `;
+}
+
+socket.on('state_update', (state) => {
+  latestState = state;
+  amHost = state.hostId === myId;
+
+  if (myId && state.players.some(p => p.id === myId)) {
+    // We've joined — render whichever screen matches the server's phase.
+    if (state.phase === 'lobby') {
+      showScreen('screenWaiting');
+      document.getElementById('playerList').innerHTML = state.players.map(p =>
+        `<div class="player-row"><span>${p.name}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
+      ).join('');
+      document.getElementById('waitingMsg').style.display = '';
+      document.getElementById('liveSettingsBox').style.display = 'none';
+      document.getElementById('adminBtn').style.display = amHost ? '' : 'none';
+    } else if (state.phase === 'editing') {
+      if (amHost) {
+        showScreen('screenEdit');
+      } else {
+        showScreen('screenWaiting');
+        document.getElementById('playerList').innerHTML = state.players.map(p =>
+          `<div class="player-row"><span>${p.name}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
+        ).join('');
+        document.getElementById('waitingMsg').style.display = 'none';
+        document.getElementById('liveSettingsBox').style.display = '';
+        document.getElementById('liveSettingsBox').innerHTML =
+          '<div style="font-size:0.68em;font-weight:800;opacity:0.5;letter-spacing:0.4px;text-transform:uppercase;margin-bottom:6px;">Host is setting up — live preview</div>'
+          + renderSettingsReadout(state.settings);
+        document.getElementById('adminBtn').style.display = 'none';
+      }
+    } else if (state.phase === 'accepting') {
+      showScreen('screenAccept');
+      document.getElementById('acceptSettingsBox').innerHTML = renderSettingsReadout(state.settings);
+      document.getElementById('acceptList').innerHTML = state.players.map(p =>
+        `<div class="player-row"><span>${p.name}</span><span class="tag">${state.accepted[p.id] ? 'Accepted' : 'Waiting'}</span></div>`
+      ).join('');
+      const alreadyAccepted = !!state.accepted[myId];
+      document.getElementById('acceptBtn').disabled = alreadyAccepted;
+      document.getElementById('acceptBtn').textContent = alreadyAccepted ? 'Waiting on others…' : 'Accept';
+      document.getElementById('editAgainBtn').style.display = amHost ? '' : 'none';
+    } else if (state.phase === 'playing') {
+      showScreen('screenPlaying');
+    }
+  } else {
+    showScreen('screenLobby');
+  }
+});
+</script>
+</body>
+</html>
