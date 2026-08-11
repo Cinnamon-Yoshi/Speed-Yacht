@@ -40,6 +40,7 @@
     background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:8px; font-size:0.9em; font-weight:700;
   }
   .player-row .tag{ font-size:0.7em; font-weight:800; opacity:0.6; color:var(--gold); }
+  .reconnecting{ font-size:0.72em; font-weight:400; opacity:0.5; font-style:italic; }
   .waiting-msg{ text-align:center; font-size:0.85em; opacity:0.6; padding:16px; font-style:italic; }
 
   .admin-btn{
@@ -210,7 +211,7 @@ socket.on('state_update', (state) => {
     if (state.phase === 'lobby') {
       showScreen('screenWaiting');
       document.getElementById('playerList').innerHTML = state.players.map(p =>
-        `<div class="player-row"><span>${p.name}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
+        `<div class="player-row"><span>${p.name}${p.connected ? '' : ' <span class="reconnecting">reconnecting…</span>'}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
       ).join('');
       document.getElementById('waitingMsg').style.display = '';
       document.getElementById('liveSettingsBox').style.display = 'none';
@@ -221,7 +222,7 @@ socket.on('state_update', (state) => {
       } else {
         showScreen('screenWaiting');
         document.getElementById('playerList').innerHTML = state.players.map(p =>
-          `<div class="player-row"><span>${p.name}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
+          `<div class="player-row"><span>${p.name}${p.connected ? '' : ' <span class="reconnecting">reconnecting…</span>'}</span>${p.id === state.hostId ? '<span class="tag">HOST</span>' : ''}</div>`
         ).join('');
         document.getElementById('waitingMsg').style.display = 'none';
         document.getElementById('liveSettingsBox').style.display = '';
@@ -234,7 +235,7 @@ socket.on('state_update', (state) => {
       showScreen('screenAccept');
       document.getElementById('acceptSettingsBox').innerHTML = renderSettingsReadout(state.settings);
       document.getElementById('acceptList').innerHTML = state.players.map(p =>
-        `<div class="player-row"><span>${p.name}</span><span class="tag">${state.accepted[p.id] ? 'Accepted' : 'Waiting'}</span></div>`
+        `<div class="player-row"><span>${p.name}${p.connected ? '' : ' <span class="reconnecting">reconnecting…</span>'}</span><span class="tag">${state.accepted[p.id] ? 'Accepted' : 'Waiting'}</span></div>`
       ).join('');
       const alreadyAccepted = !!state.accepted[myId];
       document.getElementById('acceptBtn').disabled = alreadyAccepted;
