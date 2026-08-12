@@ -1,6 +1,6 @@
 {
   "name": "roatan-yahtzee-server",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Real-time multiplayer backend for Roatan Yahtzee",
   "main": "server.js",
   "scripts": {

@@ -64,6 +64,8 @@ function isHost(socketId) {
 }
 function publicState() {
   // What every client receives — never send anything socket-internal.
+  // gameLog is deliberately NOT included here — see broadcastGameLog()
+  // below for why.
   return {
     players: state.players.map(p => ({ id: p.id, name: p.name, connected: p.connected })),
     hostId: state.hostId,
@@ -97,7 +99,7 @@ function broadcastState() {
 // actually freed up — long enough to survive a locked phone screen or a
 // brief wifi drop, short enough that someone who's truly gone doesn't
 // block the room forever.
-const RECONNECT_GRACE_MS = 60000;
+const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 60000;
 
 function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
@@ -163,11 +165,51 @@ function advanceRound() {
   if (state.game.round >= TOTAL_ROUNDS) {
     state.game.gameOver = true;
     state.game.roundEndsAt = null;
+    recordGameLogEntry();
     broadcastState();
     return;
   }
   state.game.round++;
   startRound();
+}
+
+// ── Game Log ──────────────────────────────────────────────────────
+// Lives outside `state` on purpose — it should survive a room reset
+// (new game night, everyone left and came back) for as long as this
+// server process itself is alive. Per the accepted persistence
+// decision, it does NOT survive a redeploy/restart/spin-down — no
+// disk, no database, same tradeoff poker's Stats already runs on.
+let gameLog = [];
+let nextGameLogId = 1;
+
+// A SEPARATE broadcast channel from broadcastState()/publicState() on
+// purpose. gameLog can hold several base64 photo images across past
+// games, and broadcastState() fires on every single roll/hold/score
+// during active play — bundling the whole log into every one of those
+// would mean re-sending potentially-large image data dozens of times a
+// round for no reason. This only fires when the log itself changes.
+function broadcastGameLog() {
+  io.emit('game_log_update', gameLog);
+}
+
+function recordGameLogEntry() {
+  const ranked = state.players
+    .map(p => ({ name: p.name, total: state.game.players[p.id] ? grandTotal(state.game.players[p.id].scores, state.game.players[p.id].yahtzeeBonusCount, state.settings) : 0 }))
+    .sort((a, b) => b.total - a.total);
+  gameLog.unshift({
+    id: nextGameLogId++,
+    timestamp: Date.now(),
+    description: '',
+    photo: null, // data URL, set later by the winner if they choose to
+    settings: {
+      rollsPerTurn: state.settings.rollsPerTurn,
+      upperBonus: state.settings.upperBonus,
+      firstYahtzee: state.settings.firstYahtzee,
+      yahtzeeBonus: state.settings.yahtzeeBonus
+    },
+    players: ranked // already ranked winner-first
+  });
+  broadcastGameLog();
 }
 
 function maybeAdvanceWhenReady() {
@@ -181,6 +223,10 @@ function maybeAdvanceWhenReady() {
 }
 
 io.on('connection', (socket) => {
+  // Send the current log immediately — broadcastGameLog() only fires on
+  // future changes, so a socket connecting now would otherwise never
+  // see any of the games already logged before it connected.
+  socket.emit('game_log_update', gameLog);
 
   socket.on('join_lobby', (name) => {
     name = (name || '').toString().trim().slice(0, 20);
@@ -330,6 +376,21 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Host starts another game with the same group once the current one's
+  // over — keeps everyone's seat (no need to rejoin), jumps straight to
+  // editing so the group can re-confirm/adjust settings and Accept
+  // again, same flow as starting the very first game. gameLog itself is
+  // untouched — it lives outside `state` specifically so this doesn't
+  // clear it.
+  socket.on('new_game', () => {
+    if (!isHost(socket.id)) return;
+    if (!state.game || !state.game.gameOver) return;
+    state.game = null;
+    state.phase = 'editing';
+    state.accepted = {};
+    broadcastState();
+  });
+
   // ── Gameplay ──────────────────────────────────────────────────────
   socket.on('roll_dice', () => {
     if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
@@ -373,6 +434,47 @@ io.on('connection', (socket) => {
     pg.doneThisRound = true;
     broadcastState();
     maybeAdvanceWhenReady();
+  });
+
+  // ── Game Log ────────────────────────────────────────────────────
+  // Description: anyone can add one, but only to the game that JUST
+  // ended for this room (matches "host can enter a description" intent
+  // loosely — kept simple/permissive since this is a private friend
+  // group, not gated by host specifically).
+  socket.on('set_game_log_description', ({ id, text }) => {
+    const entry = gameLog.find(e => e.id === id);
+    if (!entry) return;
+    entry.description = (text || '').toString().slice(0, 200);
+    broadcastGameLog();
+  });
+
+  // Winner photo: only lets the submitter attach it to an entry where
+  // they're actually the recorded winner (rank 0) — prevents anyone
+  // else's photo ending up on someone else's win.
+  // Winner photo: identity is derived from the submitting socket's own
+  // player record, never from a client-claimed name — otherwise anyone
+  // could just say `name: <the winner>` and attach whatever they want to
+  // someone else's win, regardless of who they actually are.
+  socket.on('set_winner_photo', ({ id, photo }) => {
+    const entry = gameLog.find(e => e.id === id);
+    if (!entry) return;
+    const player = state.players.find(p => p.id === socket.id);
+    if (!player) return;
+    if (!entry.players.length || entry.players[0].name !== player.name) return;
+    if (typeof photo !== 'string' || !photo.startsWith('data:image/')) return;
+    if (photo.length > 300000) return; // ~200KB decoded — plenty for a deliberately low-res capture, guards against a misbehaving client sending something huge
+    entry.photo = photo;
+    broadcastGameLog();
+  });
+
+  socket.on('delete_game_log_entry', ({ id, pin }) => {
+    if (pin !== HOST_PIN) {
+      socket.emit('game_log_delete_result', { success: false, message: 'Incorrect PIN.' });
+      return;
+    }
+    gameLog = gameLog.filter(e => e.id !== id);
+    socket.emit('game_log_delete_result', { success: true });
+    broadcastGameLog();
   });
 
   socket.on('disconnect', () => {
