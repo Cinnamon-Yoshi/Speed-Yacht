@@ -80,12 +80,33 @@ async function main() {
   });
 
   await withFreshServer(async (URL) => {
-    console.log('\n=== Test 2: description can be added and syncs to other players ===');
+    console.log('\n=== Test 2: admin-edited description (with correct PIN) syncs to other players ===');
     const { sockets, infos, getGameLog } = await playFullGame(URL, ['Denver', 'Colton']);
     const entryId = getGameLog()[0].id;
-    sockets.Denver.emit('set_game_log_description', { id: entryId, text: 'Game night at the lake house' });
+
+    // Wrong PIN should be silently rejected — no change
+    sockets.Denver.emit('set_game_log_description', { id: entryId, text: 'should not stick', pin: '0000' });
+    await new Promise(r => setTimeout(r, 200));
+    console.log('  wrong PIN does not set description:', getGameLog()[0].description === '');
+
+    // Correct PIN should work and sync to the other player
+    sockets.Denver.emit('set_game_log_description', { id: entryId, text: 'Game night at the lake house', pin: '8888' });
     await new Promise(r => setTimeout(r, 200));
     console.log('  Colton sees the description Denver added:', getGameLog()[0].description);
+    closeAll(sockets);
+  });
+
+  await withFreshServer(async (URL) => {
+    console.log('\n=== Test 2b: PIN can be verified without any side effects ===');
+    const { sockets, getGameLog } = await playFullGame(URL, ['Denver', 'Colton']);
+    let result = null;
+    sockets.Denver.on('game_log_pin_result', r => result = r);
+    sockets.Denver.emit('verify_game_log_pin', '0000');
+    await new Promise(r => setTimeout(r, 200));
+    console.log('  wrong pin verify result:', result);
+    sockets.Denver.emit('verify_game_log_pin', '8888');
+    await new Promise(r => setTimeout(r, 200));
+    console.log('  correct pin verify result:', result);
     closeAll(sockets);
   });
 

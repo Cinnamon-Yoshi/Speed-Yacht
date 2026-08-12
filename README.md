@@ -82,6 +82,31 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.5 fixes
+
+- Rebranded from "Roatan Yahtzee" to "Speed-Yacht" throughout — page
+  title, header (with the die icon replacing the old spade), and the
+  iOS/Android home-screen name.
+- Edit screen was missing 3 of the 5 original scoring settings (Upper
+  63 Bonus, 1st Yahtzee Score, Yahtzee Bonus) — only Rolls/Round
+  Advance/bots made it into the server build. Added the missing three,
+  plus the Edit form now correctly populates from real server state
+  (matters on reconnect and "Start Another Game") instead of always
+  showing stale HTML defaults.
+- "Waiting" now renders in white on the Accept screen; "Accepted"
+  stays gold — previously both used the same gold color.
+- Description moved from "any player can add one after the game ends"
+  to "host enters it on the Edit screen before the game starts" — it
+  flows automatically into the Game Log entry when the game ends, then
+  resets to blank for the next game.
+- Game Log admin PIN is now verified with a real round-trip to the
+  server *before* delete/edit controls appear, instead of only
+  discovering the PIN was wrong when an actual delete was attempted.
+- Admin mode on the Game Log screen can now edit an entry's
+  description after the fact, not just delete entries.
+- Delete now requires confirming first — no more one-tap accidental
+  removal.
+
 ## Testing
 
 - `node test_scoring.js` — pure scoring-rule unit tests, no server
@@ -94,6 +119,9 @@ no ongoing cost beyond Render's free tier.
   identity verification (including the impersonation-attempt test),
   admin-PIN delete, multi-game accumulation, late-joining sync. Also
   plain Node.js, no browser needed.
+- `node test_description_flow.js` — verifies the host-entered
+  description at Edit time flows through to the Game Log entry and
+  resets cleanly for the next game.
 
 ## Deploying (mirrors poker's setup)
 

@@ -51,7 +51,8 @@ function freshState() {
       upperBonus: 35,
       firstYahtzee: 50,
       yahtzeeBonus: 100,
-      fillWithBots: true
+      fillWithBots: true,
+      description: ''      // entered by host on the Edit screen, consumed into the Game Log entry once the game ends, then cleared for the next game
     },
     accepted: {},        // { [playerId]: true }
     game: null            // set once phase becomes 'playing' — see startGame()
@@ -199,7 +200,7 @@ function recordGameLogEntry() {
   gameLog.unshift({
     id: nextGameLogId++,
     timestamp: Date.now(),
-    description: '',
+    description: state.settings.description || '', // entered by the host on the Edit screen, not after the fact
     photo: null, // data URL, set later by the winner if they choose to
     settings: {
       rollsPerTurn: state.settings.rollsPerTurn,
@@ -209,6 +210,7 @@ function recordGameLogEntry() {
     },
     players: ranked // already ranked winner-first
   });
+  state.settings.description = ''; // consumed — next game starts with a blank description
   broadcastGameLog();
 }
 
@@ -333,10 +335,12 @@ io.on('connection', (socket) => {
   socket.on('host_update_settings', (partialSettings) => {
     if (!isHost(socket.id)) return;
     if (state.phase !== 'editing') return;
-    const allowed = ['rollsPerTurn', 'roundAdvance', 'upperBonus', 'firstYahtzee', 'yahtzeeBonus', 'fillWithBots'];
+    const allowed = ['rollsPerTurn', 'roundAdvance', 'upperBonus', 'firstYahtzee', 'yahtzeeBonus', 'fillWithBots', 'description'];
     for (const key of allowed) {
       if (Object.prototype.hasOwnProperty.call(partialSettings, key)) {
-        state.settings[key] = partialSettings[key];
+        state.settings[key] = key === 'description'
+          ? (partialSettings[key] || '').toString().slice(0, 200)
+          : partialSettings[key];
       }
     }
     broadcastState();
@@ -437,20 +441,25 @@ io.on('connection', (socket) => {
   });
 
   // ── Game Log ────────────────────────────────────────────────────
-  // Description: anyone can add one, but only to the game that JUST
-  // ended for this room (matches "host can enter a description" intent
-  // loosely — kept simple/permissive since this is a private friend
-  // group, not gated by host specifically).
-  socket.on('set_game_log_description', ({ id, text }) => {
+  // Checks the PIN with no side effects — lets the client confirm
+  // access BEFORE revealing delete/edit controls, rather than only
+  // finding out it was wrong after a destructive action was attempted.
+  socket.on('verify_game_log_pin', (pin) => {
+    socket.emit('game_log_pin_result', { success: pin === HOST_PIN });
+  });
+
+  // Description on an already-recorded entry is an admin action now —
+  // the normal path is the host setting it on the Edit screen before the
+  // game even starts (via host_update_settings), this is specifically
+  // for fixing/adding one after the fact.
+  socket.on('set_game_log_description', ({ id, text, pin }) => {
+    if (pin !== HOST_PIN) return;
     const entry = gameLog.find(e => e.id === id);
     if (!entry) return;
     entry.description = (text || '').toString().slice(0, 200);
     broadcastGameLog();
   });
 
-  // Winner photo: only lets the submitter attach it to an entry where
-  // they're actually the recorded winner (rank 0) — prevents anyone
-  // else's photo ending up on someone else's win.
   // Winner photo: identity is derived from the submitting socket's own
   // player record, never from a client-claimed name — otherwise anyone
   // could just say `name: <the winner>` and attach whatever they want to
