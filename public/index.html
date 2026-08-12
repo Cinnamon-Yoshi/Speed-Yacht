@@ -16,6 +16,64 @@
   .phone{ background:var(--bg); border-radius:20px; padding:16px; }
   .h-title{ font-weight:800; font-size:1.3em; text-align:center; margin-bottom:2px; }
   .app-version{ font-size:0.72em; font-weight:400; opacity:0.5; text-align:center; margin-bottom:10px; }
+
+  /* ===== Playing screen ===== */
+  .play-header{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  .round-box{
+    background:rgba(0,0,0,0.25); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
+    padding:8px 12px; text-align:center; flex:0 0 auto;
+  }
+  .round-lbl{ font-size:0.62em; font-weight:700; opacity:0.6; text-transform:uppercase; }
+  .round-num{ font-weight:900; color:var(--gold); font-size:1em; }
+  .timer-track{ flex:1; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
+  .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear; }
+
+  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; }
+  .die{
+    width:56px; height:56px; background:#fff; border-radius:10px; position:relative;
+    cursor:pointer; flex:0 0 auto;
+  }
+  .die.held{ background:var(--gold); }
+  .die.held .pip{ background:#1a1200; }
+  .die.locked{ opacity:0.5; cursor:default; }
+  .pipgrid{ position:absolute; inset:14%; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
+  .pip{ width:65%; height:65%; margin:auto; border-radius:50%; background:#111; justify-self:center; align-self:center; }
+  .hold-lbl{ position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:3px; font-size:0.6em; font-weight:700; opacity:0.6; white-space:nowrap; }
+
+  .play-status{ text-align:center; font-size:0.78em; opacity:0.65; margin:8px 0 14px; min-height:1.2em; }
+
+  .scoresheet{ display:flex; flex-direction:column; gap:4px; }
+  .sc-header{ display:flex; gap:4px; font-size:0.68em; font-weight:800; opacity:0.6; padding:0 2px 4px; }
+  .sc-header .sc-name-col{ flex:1.4; }
+  .sc-header .sc-player-col{ flex:1; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sc-row{ display:flex; gap:4px; align-items:stretch; }
+  .sc-cat-cell{
+    flex:1.4; background:rgba(255,255,255,0.05); border-radius:6px; padding:6px 8px;
+    font-size:0.75em; font-weight:700; display:flex; align-items:center;
+  }
+  .sc-player-cell{
+    flex:1; background:rgba(255,255,255,0.05); border-radius:6px; padding:6px 4px;
+    font-size:0.8em; font-weight:800; text-align:center; display:flex; align-items:center; justify-content:center;
+    color:#fff;
+  }
+  .sc-player-cell.mine.pickable{
+    background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.5); cursor:pointer; color:var(--gold);
+  }
+  .sc-player-cell.mine.pickable.zero{ opacity:0.45; }
+  .sc-player-cell.scored{ color:var(--gold); }
+  .sc-total-row{ margin-top:6px; border-top:1px solid rgba(212,175,55,0.3); padding-top:6px; }
+  .sc-total-row .sc-cat-cell, .sc-total-row .sc-player-cell{ font-weight:900; background:none; }
+
+  /* ===== Results screen ===== */
+  .fr-row{
+    display:flex; align-items:center; gap:10px; padding:12px 14px;
+    background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px;
+  }
+  .fr-row.winner{ background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.5); }
+  .fr-rank{ font-weight:900; width:22px; opacity:0.7; }
+  .fr-row.winner .fr-rank{ opacity:1; color:var(--gold); }
+  .fr-name{ flex:1; font-weight:800; }
+  .fr-score{ font-weight:900; font-size:1.2em; color:var(--gold); }
   .h-sub{ opacity:0.6; font-size:0.85em; text-align:center; margin-bottom:18px; }
 
   .screen{ display:none; }
@@ -151,10 +209,25 @@
     <button class="secondary-btn" id="editAgainBtn" style="display:none;">Edit Settings Again</button>
   </div>
 
-  <!-- Playing (placeholder — Phase 3) -->
+  <!-- Playing -->
   <div class="screen" id="screenPlaying">
-    <div class="h-sub">Game starting…</div>
-    <div class="status-msg">Everyone accepted — the actual gameplay screen is Phase 3, not built yet.</div>
+    <div class="play-header">
+      <div class="round-box"><div class="round-lbl">Round</div><div class="round-num" id="roundNum">1 of 13</div></div>
+      <div class="timer-track" id="timerTrack" style="display:none;"><div class="timer-fill" id="timerFill"></div></div>
+      <div class="app-version" id="appVersionPlaying" style="margin:0;flex:0 0 auto;"></div>
+    </div>
+
+    <div class="dice-row" id="diceRow"></div>
+    <button class="primary-btn" id="rollBtn">Roll</button>
+    <div class="play-status" id="playStatus"></div>
+
+    <div class="scoresheet" id="scoresheet"></div>
+  </div>
+
+  <!-- Results -->
+  <div class="screen" id="screenResults">
+    <div class="h-sub">🏆 Game Complete</div>
+    <div id="resultsList"></div>
   </div>
 
 </div></div>
@@ -166,8 +239,9 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.2';
+const APP_VERSION = '1.3';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
+document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
 const socket = io();
 let myId = null;
@@ -297,12 +371,191 @@ socket.on('state_update', (state) => {
       document.getElementById('acceptBtn').textContent = alreadyAccepted ? 'Waiting on others…' : 'Accept';
       document.getElementById('editAgainBtn').style.display = amHost ? '' : 'none';
     } else if (state.phase === 'playing') {
-      showScreen('screenPlaying');
+      if (state.game.gameOver) {
+        showScreen('screenResults');
+        renderResults(state);
+      } else {
+        showScreen('screenPlaying');
+        renderPlaying(state);
+      }
     }
   } else {
     showScreen('screenLobby');
   }
 });
+
+// ── Gameplay rendering ─────────────────────────────────────────────
+const CATEGORY_LABELS = {
+  ones: 'Ones', twos: 'Twos', threes: 'Threes', fours: 'Fours', fives: 'Fives', sixes: 'Sixes',
+  threeKind: '3 of a Kind', fourKind: '4 of a Kind', fullHouse: 'Full House',
+  smStraight: 'Sm. Straight', lgStraight: 'Lg. Straight', chance: 'Chance', yahtzee: 'Yahtzee'
+};
+const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS);
+
+// Duplicated (deliberately) from server.js's scoring.js — used ONLY to
+// show a live preview of what a category WOULD score before you tap it.
+// The server independently computes and owns the value that actually
+// gets committed when you pick_category; this client copy never writes
+// anything, so there's no way a mismatched preview could let someone
+// score more than the server allows.
+function previewScoreFor(key, dice, settings) {
+  const counts = {};
+  dice.forEach(v => counts[v] = (counts[v] || 0) + 1);
+  const countValues = Object.values(counts);
+  const sum = dice.reduce((a, b) => a + b, 0);
+  const uniqueSorted = [...new Set(dice)].sort((a, b) => a - b);
+  function hasStraight(len) {
+    let run = 1;
+    for (let i = 1; i < uniqueSorted.length; i++) {
+      run = (uniqueSorted[i] === uniqueSorted[i-1]+1) ? run+1 : 1;
+      if (run >= len) return true;
+    }
+    return len <= 1;
+  }
+  switch (key) {
+    case 'ones': return (counts[1]||0)*1;
+    case 'twos': return (counts[2]||0)*2;
+    case 'threes': return (counts[3]||0)*3;
+    case 'fours': return (counts[4]||0)*4;
+    case 'fives': return (counts[5]||0)*5;
+    case 'sixes': return (counts[6]||0)*6;
+    case 'threeKind': return countValues.some(c=>c>=3) ? sum : 0;
+    case 'fourKind': return countValues.some(c=>c>=4) ? sum : 0;
+    case 'fullHouse': {
+      const sorted = countValues.slice().sort();
+      const proper = sorted.length===2 && sorted[0]===2 && sorted[1]===3;
+      const fiveOfAKind = countValues.some(c=>c===5);
+      return (proper || fiveOfAKind) ? 25 : 0;
+    }
+    case 'smStraight': return hasStraight(4) ? 30 : 0;
+    case 'lgStraight': return hasStraight(5) ? 40 : 0;
+    case 'chance': return sum;
+    case 'yahtzee': return (new Set(dice).size===1) ? (settings.firstYahtzee||50) : 0;
+    default: return 0;
+  }
+}
+
+let lastRoundRendered = null;
+function renderPlaying(state) {
+  const g = state.game;
+  document.getElementById('roundNum').textContent = `${g.round} of ${g.totalRounds}`;
+
+  const myG = g.players[myId];
+  if (!myG) return;
+
+  // Timer (Full-30 mode only)
+  const timerTrack = document.getElementById('timerTrack');
+  if (g.roundEndsAt) {
+    timerTrack.style.display = '';
+    const msLeft = Math.max(0, g.roundEndsAt - Date.now());
+    document.getElementById('timerFill').style.width = Math.round((msLeft/30000)*100) + '%';
+  } else {
+    timerTrack.style.display = 'none';
+  }
+
+  // Dice
+  const canInteract = !myG.doneThisRound;
+  const diceRow = document.getElementById('diceRow');
+  diceRow.innerHTML = myG.dice.map((val, i) => {
+    const held = myG.held[i];
+    const clickable = canInteract && myG.rollsUsed > 0;
+    return `<div class="die${held?' held':''}${clickable?'':' locked'}" data-i="${i}">
+      ${pipGridHtml(val)}
+      ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
+    </div>`;
+  }).join('');
+  diceRow.querySelectorAll('.die').forEach(el => {
+    el.onclick = () => {
+      if (!canInteract || myG.rollsUsed === 0) return;
+      socket.emit('toggle_hold', parseInt(el.dataset.i, 10));
+    };
+  });
+
+  const rollsLeft = state.settings.rollsPerTurn - myG.rollsUsed;
+  const rollBtn = document.getElementById('rollBtn');
+  rollBtn.disabled = !canInteract || rollsLeft <= 0;
+  rollBtn.textContent = canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round';
+  rollBtn.onclick = () => { if (canInteract && rollsLeft > 0) socket.emit('roll_dice'); };
+
+  document.getElementById('playStatus').textContent =
+    myG.doneThisRound ? "You're done this round — waiting on other players…" :
+    (myG.rollsUsed === 0 ? 'Tap Roll to get started.' : 'Tap a die to hold it, or pick a category below.');
+
+  renderScoresheet(state);
+}
+
+function renderScoresheet(state) {
+  const g = state.game;
+  const players = state.players;
+  const myG = g.players[myId];
+
+  let header = '<div class="sc-header"><div class="sc-name-col"></div>' +
+    players.map(p => `<div class="sc-player-col">${p.name}</div>`).join('') + '</div>';
+
+  let rows = CATEGORY_ORDER.map(key => {
+    const cells = players.map(p => {
+      const pg = g.players[p.id];
+      if (!pg) return '<div class="sc-player-cell">—</div>';
+      const hasScore = Object.prototype.hasOwnProperty.call(pg.scores, key);
+      if (hasScore) {
+        return `<div class="sc-player-cell scored">${pg.scores[key]}</div>`;
+      }
+      if (p.id === myId && myG && !myG.doneThisRound && myG.rollsUsed > 0) {
+        const preview = previewScoreFor(key, myG.dice, state.settings);
+        return `<div class="sc-player-cell mine pickable${preview===0?' zero':''}" data-key="${key}">${preview}</div>`;
+      }
+      return '<div class="sc-player-cell">—</div>';
+    }).join('');
+    return `<div class="sc-row"><div class="sc-cat-cell">${CATEGORY_LABELS[key]}</div>${cells}</div>`;
+  }).join('');
+
+  const totalCells = players.map(p => {
+    const pg = g.players[p.id];
+    return `<div class="sc-player-cell">${pg ? pg.total : 0}</div>`;
+  }).join('');
+  const totalRow = `<div class="sc-row sc-total-row"><div class="sc-cat-cell">Total</div>${totalCells}</div>`;
+
+  document.getElementById('scoresheet').innerHTML = header + rows + totalRow;
+  document.querySelectorAll('.sc-player-cell.pickable').forEach(el => {
+    el.onclick = () => socket.emit('pick_category', el.dataset.key);
+  });
+}
+
+function renderResults(state) {
+  const ranked = state.players
+    .map(p => ({ name: p.name, total: state.game.players[p.id] ? state.game.players[p.id].total : 0 }))
+    .sort((a, b) => b.total - a.total);
+  document.getElementById('resultsList').innerHTML = ranked.map((r, i) => `
+    <div class="fr-row${i===0?' winner':''}">
+      <span class="fr-rank">${i+1}</span>
+      <span class="fr-name">${r.name}</span>
+      <span class="fr-score">${r.total}</span>
+    </div>
+  `).join('');
+}
+
+const PIP_POS = {
+  1: [[2,2]], 2: [[1,1],[3,3]], 3: [[1,1],[2,2],[3,3]],
+  4: [[1,1],[1,3],[3,1],[3,3]], 5: [[1,1],[1,3],[2,2],[3,1],[3,3]],
+  6: [[1,1],[1,3],[2,1],[2,3],[3,1],[3,3]]
+};
+function pipGridHtml(value) {
+  const pos = PIP_POS[value] || [];
+  const pips = pos.map(([r,c]) => `<span class="pip" style="grid-row:${r};grid-column:${c};"></span>`).join('');
+  return `<span class="pipgrid">${pips}</span>`;
+}
+
+// Timer bar needs to keep ticking down smoothly between server broadcasts
+// (which only arrive on state changes, not every second) — a lightweight
+// local interval re-renders just the fill width from the same roundEndsAt
+// timestamp the server already sent.
+setInterval(() => {
+  if (latestState && latestState.phase === 'playing' && latestState.game && !latestState.game.gameOver && latestState.game.roundEndsAt) {
+    const msLeft = Math.max(0, latestState.game.roundEndsAt - Date.now());
+    const fill = document.getElementById('timerFill');
+    if (fill) fill.style.width = Math.round((msLeft/30000)*100) + '%';
+  }
+}, 500);
 </script>
 </body>
 </html>
