@@ -8,6 +8,7 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const { CATEGORIES, scoreFor, isYahtzeeRoll, grandTotal } = require('./scoring');
 
 const app = express();
 const server = http.createServer(app);
@@ -37,6 +38,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 // (running game night) might join 2nd, 3rd, or 4th. Anyone who joins can
 // tap Admin and enter this PIN to become/reclaim host.
 const HOST_PIN = '8888';
+const TOTAL_ROUNDS = 13;
 
 function freshState() {
   return {
@@ -51,7 +53,8 @@ function freshState() {
       yahtzeeBonus: 100,
       fillWithBots: true
     },
-    accepted: {}         // { [playerId]: true }
+    accepted: {},        // { [playerId]: true }
+    game: null            // set once phase becomes 'playing' — see startGame()
   };
 }
 let state = freshState();
@@ -66,7 +69,24 @@ function publicState() {
     hostId: state.hostId,
     phase: state.phase,
     settings: state.settings,
-    accepted: state.accepted
+    accepted: state.accepted,
+    game: state.game ? {
+      round: state.game.round,
+      totalRounds: TOTAL_ROUNDS,
+      roundEndsAt: state.game.roundEndsAt,
+      gameOver: state.game.gameOver,
+      players: Object.fromEntries(
+        Object.entries(state.game.players).map(([pid, pg]) => [pid, {
+          dice: pg.dice,
+          held: pg.held,
+          rollsUsed: pg.rollsUsed,
+          scores: pg.scores,
+          yahtzeeBonusCount: pg.yahtzeeBonusCount,
+          doneThisRound: pg.doneThisRound,
+          total: grandTotal(pg.scores, pg.yahtzeeBonusCount, state.settings)
+        }])
+      )
+    } : null
   };
 }
 function broadcastState() {
@@ -83,10 +103,80 @@ function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
   delete state.accepted[playerId];
   if (state.hostId === playerId) state.hostId = null; // free up host for someone else to claim
+  if (state.game && state.game.players[playerId]) delete state.game.players[playerId];
   if (state.players.length === 0) {
     state = freshState();
   } else {
     broadcastState();
+  }
+}
+
+// ── Gameplay engine ──────────────────────────────────────────────────
+let roundTimer = null;
+
+function freshPlayerGameState() {
+  return {
+    dice: [1, 1, 1, 1, 1],
+    held: [false, false, false, false, false],
+    rollsUsed: 0,
+    scores: {},
+    yahtzeeBonusCount: 0,
+    doneThisRound: false
+  };
+}
+
+function startGame() {
+  state.game = {
+    round: 1,
+    gameOver: false,
+    roundEndsAt: null,
+    players: Object.fromEntries(state.players.map(p => [p.id, freshPlayerGameState()]))
+  };
+  startRound();
+}
+
+function startRound() {
+  if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  for (const pg of Object.values(state.game.players)) {
+    pg.dice = [1, 1, 1, 1, 1];
+    pg.held = [false, false, false, false, false];
+    pg.rollsUsed = 0;
+    pg.doneThisRound = false;
+  }
+  if (state.settings.roundAdvance === 'Full-30') {
+    state.game.roundEndsAt = Date.now() + 30000;
+    roundTimer = setTimeout(() => advanceRound(), 30000);
+  } else {
+    state.game.roundEndsAt = null;
+  }
+  broadcastState();
+}
+
+function allPlayersDone() {
+  const ids = state.players.map(p => p.id);
+  return ids.length > 0 && ids.every(id => state.game.players[id] && state.game.players[id].doneThisRound);
+}
+
+function advanceRound() {
+  if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  if (!state.game || state.game.gameOver) return;
+  if (state.game.round >= TOTAL_ROUNDS) {
+    state.game.gameOver = true;
+    state.game.roundEndsAt = null;
+    broadcastState();
+    return;
+  }
+  state.game.round++;
+  startRound();
+}
+
+function maybeAdvanceWhenReady() {
+  // "When-Ready" mode advances the instant everyone's done, instead of
+  // waiting on a fixed timer — that's the entire distinction between the
+  // two modes. "Full-30" always waits out the full 30s regardless of
+  // whether everyone finished early, on purpose.
+  if (state.settings.roundAdvance === 'When-Ready' && allPlayersDone()) {
+    advanceRound();
   }
 }
 
@@ -128,6 +218,10 @@ io.on('connection', (socket) => {
       if (existing.id !== socket.id) {
         delete state.accepted[existing.id];
         if (wasHost) state.hostId = socket.id; // keep host pointed at the same person, not their stale old socket
+        if (state.game && state.game.players[existing.id]) {
+          state.game.players[socket.id] = state.game.players[existing.id];
+          delete state.game.players[existing.id];
+        }
         existing.id = socket.id;
         if (hadAccepted) state.accepted[socket.id] = true;
       }
@@ -222,7 +316,7 @@ io.on('connection', (socket) => {
       state.players.every(p => state.accepted[p.id]);
     if (allAccepted) {
       state.phase = 'playing';
-      broadcastState();
+      startGame();
     }
   });
 
@@ -234,6 +328,51 @@ io.on('connection', (socket) => {
     state.phase = 'editing';
     state.accepted = {};
     broadcastState();
+  });
+
+  // ── Gameplay ──────────────────────────────────────────────────────
+  socket.on('roll_dice', () => {
+    if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    const pg = state.game.players[socket.id];
+    if (!pg || pg.doneThisRound) return;
+    if (pg.rollsUsed >= state.settings.rollsPerTurn) return;
+    for (let i = 0; i < 5; i++) {
+      if (!pg.held[i]) pg.dice[i] = 1 + Math.floor(Math.random() * 6);
+    }
+    pg.rollsUsed++;
+    broadcastState();
+  });
+
+  socket.on('toggle_hold', (dieIndex) => {
+    if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    const pg = state.game.players[socket.id];
+    if (!pg || pg.doneThisRound) return;
+    if (!Number.isInteger(dieIndex) || dieIndex < 0 || dieIndex > 4) return;
+    if (pg.rollsUsed === 0) return; // nothing to hold before the first roll
+    pg.held[dieIndex] = !pg.held[dieIndex];
+    broadcastState();
+  });
+
+  socket.on('pick_category', (key) => {
+    if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    const pg = state.game.players[socket.id];
+    if (!pg || pg.doneThisRound) return;
+    if (!CATEGORIES.includes(key)) return;
+    if (Object.prototype.hasOwnProperty.call(pg.scores, key)) return; // already scored
+    if (pg.rollsUsed === 0) return; // must roll at least once first
+
+    // Yahtzee bonus: this roll IS a Yahtzee, and they've already banked
+    // their first Yahtzee (a positive score already sitting in that
+    // category) — award the bonus regardless of which category this
+    // particular roll ultimately gets scored into.
+    if (isYahtzeeRoll(pg.dice) && pg.scores.yahtzee > 0) {
+      pg.yahtzeeBonusCount = (pg.yahtzeeBonusCount || 0) + 1;
+    }
+
+    pg.scores[key] = scoreFor(key, pg.dice, state.settings);
+    pg.doneThisRound = true;
+    broadcastState();
+    maybeAdvanceWhenReady();
   });
 
   socket.on('disconnect', () => {
