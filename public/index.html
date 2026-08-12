@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Roatan Yahtzee</title>
+<title>Speed-Yacht</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='0' y='0' width='100' height='100' rx='20' fill='%230b3d2e'/><g transform='rotate(45 50 50)'><rect x='20' y='20' width='60' height='60' rx='12' fill='%23ffffff'/><circle cx='35' cy='35' r='7' fill='%230b3d2e'/><circle cx='65' cy='35' r='7' fill='%230b3d2e'/><circle cx='50' cy='50' r='7' fill='%230b3d2e'/><circle cx='35' cy='65' r='7' fill='%230b3d2e'/><circle cx='65' cy='65' r='7' fill='%230b3d2e'/></g></svg>">
 
 <!-- Home-screen icon support. iOS Safari specifically ignores SVG for
@@ -15,7 +15,7 @@
 <meta name="theme-color" content="#0b3d2e">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Yahtzee">
+<meta name="apple-mobile-web-app-title" content="Speed-Yacht">
 <style>
   :root{ --bg:#0b3d2e; --gold:#d4af37; }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -25,7 +25,8 @@
   }
   .wrap{max-width:430px;width:100%;}
   .phone{ background:var(--bg); border-radius:20px; padding:16px; }
-  .h-title{ font-weight:800; font-size:1.3em; text-align:center; margin-bottom:2px; }
+  .h-title{ font-weight:800; font-size:1.3em; text-align:center; margin-bottom:2px; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .h-icon{ width:1.1em; height:1.1em; flex:0 0 auto; }
   .app-version{ font-size:0.72em; font-weight:400; opacity:0.5; text-align:center; margin-bottom:10px; }
 
   /* ===== Playing screen ===== */
@@ -173,6 +174,7 @@
     background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:8px; font-size:0.9em; font-weight:700;
   }
   .player-row .tag{ font-size:0.7em; font-weight:800; opacity:0.6; color:var(--gold); }
+  .player-row .tag.tag-waiting{ color:#fff; }
   .reconnecting{ font-size:0.72em; font-weight:400; opacity:0.5; font-style:italic; }
   .waiting-msg{ text-align:center; font-size:0.85em; opacity:0.6; padding:16px; font-style:italic; }
 
@@ -204,6 +206,13 @@
     border-radius:6px; color:#fff; font-weight:800; font-size:0.95em;
     padding:4px 8px; width:108px; text-align-last:center; cursor:pointer;
   }
+  .gi-setting-input{
+    background:rgba(255,255,255,0.08); border:1px solid rgba(212,175,55,0.5);
+    border-radius:6px; color:#fff; font-weight:800; font-size:0.95em;
+    padding:4px 8px; width:70px; text-align:center;
+  }
+  .gi-desc-row{ flex-direction:column; align-items:stretch; gap:6px; }
+  .gi-desc-row .lobby-input{ margin-bottom:0; }
   .gi-setting-value{ font-weight:800; color:var(--gold); }
   .toggle{
     width:40px; height:23px; border-radius:12px; background:rgba(255,255,255,0.15); position:relative; cursor:pointer;
@@ -222,7 +231,10 @@
 <body>
 <div class="wrap"><div class="phone">
 
-  <div class="h-title">♠ Roatan Yahtzee</div>
+  <div class="h-title">
+    <svg class="h-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" rx="20" fill="#0b3d2e"/><g transform="rotate(45 50 50)"><rect x="20" y="20" width="60" height="60" rx="12" fill="#ffffff"/><circle cx="35" cy="35" r="7" fill="#0b3d2e"/><circle cx="65" cy="35" r="7" fill="#0b3d2e"/><circle cx="50" cy="50" r="7" fill="#0b3d2e"/><circle cx="35" cy="65" r="7" fill="#0b3d2e"/><circle cx="65" cy="65" r="7" fill="#0b3d2e"/></g></svg>
+    Speed-Yacht
+  </div>
   <div class="app-version" id="appVersion"></div>
   <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
 
@@ -268,8 +280,21 @@
           <option value="When-Ready">When-Ready</option><option value="Full-30" selected>Full-30</option>
         </select>
       </div>
+      <div class="gi-setting-row"><span>Upper 63 Bonus:</span>
+        <input type="number" class="gi-setting-input" id="editUpperBonus" value="35">
+      </div>
+      <div class="gi-setting-row"><span>1st Yahtzee Score:</span>
+        <input type="number" class="gi-setting-input" id="editFirstYahtzee" value="50">
+      </div>
+      <div class="gi-setting-row"><span>Yahtzee Bonus (+ea):</span>
+        <input type="number" class="gi-setting-input" id="editYahtzeeBonus" value="100">
+      </div>
       <div class="gi-setting-row"><span>Fill empty seats with bots:</span>
         <div class="toggle on" id="editBotsToggle"><div class="knob"></div></div>
+      </div>
+      <div class="gi-setting-row gi-desc-row">
+        <span>Description (optional):</span>
+        <input class="lobby-input" id="editDescription" placeholder="e.g. Game night at Colton's" maxlength="200">
       </div>
     </div>
     <button class="primary-btn" id="confirmSettingsBtn">Confirm — Send to Players</button>
@@ -332,11 +357,6 @@
       </div>
     </div>
 
-    <div class="desc-box" id="descBox" style="display:none;">
-      <input class="lobby-input" id="descInput" placeholder="Add a short description (optional)" maxlength="200">
-      <button class="secondary-btn" id="descSaveBtn">Save Description</button>
-    </div>
-
     <button class="admin-btn" id="viewGameLogBtn" style="margin-top:14px;">📖 View Game Log</button>
   </div>
 
@@ -369,13 +389,14 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
 const socket = io();
 let myId = null;
 let amHost = false;
+let editFormPopulated = false;
 let latestState = null;
 
 function showScreen(id){
@@ -439,14 +460,29 @@ document.getElementById('editBotsToggle').onclick = function(){
   this.classList.toggle('on');
   emitLiveSettings();
 };
-['editRolls','editAdvance'].forEach(id => {
+['editRolls','editAdvance','editUpperBonus','editFirstYahtzee','editYahtzeeBonus'].forEach(id => {
   document.getElementById(id).onchange = emitLiveSettings;
 });
+document.getElementById('editDescription').oninput = emitLiveSettings;
+function populateEditForm(settings){
+  document.getElementById('editRolls').value = settings.rollsPerTurn;
+  document.getElementById('editAdvance').value = settings.roundAdvance;
+  document.getElementById('editUpperBonus').value = settings.upperBonus;
+  document.getElementById('editFirstYahtzee').value = settings.firstYahtzee;
+  document.getElementById('editYahtzeeBonus').value = settings.yahtzeeBonus;
+  document.getElementById('editBotsToggle').classList.toggle('on', !!settings.fillWithBots);
+  document.getElementById('editDescription').value = settings.description || '';
+}
+
 function emitLiveSettings(){
   socket.emit('host_update_settings', {
     rollsPerTurn: parseInt(document.getElementById('editRolls').value, 10),
     roundAdvance: document.getElementById('editAdvance').value,
-    fillWithBots: document.getElementById('editBotsToggle').classList.contains('on')
+    upperBonus: parseInt(document.getElementById('editUpperBonus').value, 10) || 0,
+    firstYahtzee: parseInt(document.getElementById('editFirstYahtzee').value, 10) || 0,
+    yahtzeeBonus: parseInt(document.getElementById('editYahtzeeBonus').value, 10) || 0,
+    fillWithBots: document.getElementById('editBotsToggle').classList.contains('on'),
+    description: document.getElementById('editDescription').value
   });
 }
 
@@ -454,13 +490,18 @@ function renderSettingsReadout(settings){
   return `
     <div class="gi-setting-row"><span>Rolls per turn:</span><span class="gi-setting-value">${settings.rollsPerTurn}</span></div>
     <div class="gi-setting-row"><span>Round Advance:</span><span class="gi-setting-value">${settings.roundAdvance}</span></div>
+    <div class="gi-setting-row"><span>Upper 63 Bonus:</span><span class="gi-setting-value">${settings.upperBonus}</span></div>
+    <div class="gi-setting-row"><span>1st Yahtzee Score:</span><span class="gi-setting-value">${settings.firstYahtzee}</span></div>
+    <div class="gi-setting-row"><span>Yahtzee Bonus (+ea):</span><span class="gi-setting-value">${settings.yahtzeeBonus}</span></div>
     <div class="gi-setting-row"><span>Fill seats with bots:</span><span class="gi-setting-value">${settings.fillWithBots ? 'On' : 'Off'}</span></div>
+    ${settings.description ? `<div class="gi-setting-row"><span>Description:</span></div><div style="font-size:0.82em;opacity:0.8;margin-top:-4px;">${settings.description}</div>` : ''}
   `;
 }
 
 socket.on('state_update', (state) => {
   latestState = state;
   amHost = state.hostId === myId;
+  if (state.phase !== 'editing') editFormPopulated = false;
 
   if (myId && state.players.some(p => p.id === myId)) {
     // We've joined — render whichever screen matches the server's phase.
@@ -474,6 +515,11 @@ socket.on('state_update', (state) => {
       document.getElementById('adminBtn').style.display = '';
     } else if (state.phase === 'editing') {
       if (amHost) {
+        // Only populate once per edit session — repopulating on every
+        // state_update (which fires right after the host's own edits
+        // echo back) would fight with their typing, especially in the
+        // description field.
+        if (!editFormPopulated) { populateEditForm(state.settings); editFormPopulated = true; }
         showScreen('screenEdit');
       } else {
         showScreen('screenWaiting');
@@ -494,7 +540,7 @@ socket.on('state_update', (state) => {
       showScreen('screenAccept');
       document.getElementById('acceptSettingsBox').innerHTML = renderSettingsReadout(state.settings);
       document.getElementById('acceptList').innerHTML = state.players.map(p =>
-        `<div class="player-row"><span>${p.name}${p.connected ? '' : ' <span class="reconnecting">reconnecting…</span>'}</span><span class="tag">${state.accepted[p.id] ? 'Accepted' : 'Waiting'}</span></div>`
+        `<div class="player-row"><span>${p.name}${p.connected ? '' : ' <span class="reconnecting">reconnecting…</span>'}</span><span class="tag${state.accepted[p.id] ? '' : ' tag-waiting'}">${state.accepted[p.id] ? 'Accepted' : 'Waiting'}</span></div>`
       ).join('');
       const alreadyAccepted = !!state.accepted[myId];
       document.getElementById('acceptBtn').disabled = alreadyAccepted;
@@ -688,11 +734,7 @@ function renderResultsExtras(ranked) {
   const entry = latestGameLog[0]; // most recent entry — the one that just finished, unshift-ordered
 
   document.getElementById('winnerPhotoSection').style.display = isWinner ? '' : 'none';
-  document.getElementById('descBox').style.display = entry ? '' : 'none';
-  if (entry) {
-    myLatestGameLogEntry = entry;
-    document.getElementById('descInput').value = entry.description || '';
-  }
+  if (entry) myLatestGameLogEntry = entry;
 }
 
 function state_myName() {
@@ -761,11 +803,6 @@ function wpSave() {
   wpGoTo('wpDone');
 }
 
-document.getElementById('descSaveBtn').onclick = () => {
-  if (!myLatestGameLogEntry) return;
-  socket.emit('set_game_log_description', { id: myLatestGameLogEntry.id, text: document.getElementById('descInput').value });
-};
-
 // ── Game Log screen ─────────────────────────────────────────────────
 let latestGameLog = [];
 let glAdminPin = null;
@@ -801,11 +838,25 @@ document.getElementById('glPinCancelBtn').onclick = () => {
   document.getElementById('glPinBox').style.display = 'none';
 };
 document.getElementById('glPinSubmitBtn').onclick = () => {
-  glAdminPin = document.getElementById('glPinInput').value;
-  document.getElementById('glPinBox').style.display = 'none';
-  document.getElementById('gameLogList').closest('.screen').classList.add('gl-admin-mode');
-  renderGameLog(); // rebuild so delete buttons attach correctly
+  // Verify BEFORE revealing anything — don't show delete/edit controls
+  // on a PIN that turns out to be wrong once actually used.
+  const attemptedPin = document.getElementById('glPinInput').value;
+  pendingGlPinAttempt = attemptedPin;
+  socket.emit('verify_game_log_pin', attemptedPin);
 };
+
+let pendingGlPinAttempt = null;
+socket.on('game_log_pin_result', ({ success }) => {
+  if (success) {
+    glAdminPin = pendingGlPinAttempt;
+    document.getElementById('glPinBox').style.display = 'none';
+    document.getElementById('screenGameLog').classList.add('gl-admin-mode');
+    renderGameLog();
+  } else {
+    document.getElementById('glPinError').textContent = 'Incorrect PIN.';
+  }
+  pendingGlPinAttempt = null;
+});
 
 socket.on('game_log_delete_result', ({ success, message }) => {
   if (!success) {
@@ -815,11 +866,10 @@ socket.on('game_log_delete_result', ({ success, message }) => {
   }
 });
 
-const GL_CATEGORY_ROWS_KEEP = 4; // scores box always shows exactly the top 4 players ranked
-
 function renderGameLog() {
   const listEl = document.getElementById('gameLogList');
   const emptyNote = document.getElementById('glEmptyNote');
+  const isAdmin = !!glAdminPin;
   if (!latestGameLog.length) {
     listEl.innerHTML = '';
     emptyNote.style.display = '';
@@ -851,12 +901,21 @@ function renderGameLog() {
       ? `<div class="gl-block"><div class="gl-photo-box"><img src="${entry.photo}"></div></div>`
       : ''; // omitted entirely when absent — no reserved space
 
+    // In admin mode the description becomes an editable field + Save
+    // button instead of plain text, so a wrong/missing description can
+    // be fixed after the fact without needing to delete and redo the
+    // whole entry.
+    const descBlock = isAdmin
+      ? `<input class="lobby-input gl-desc-edit" data-id="${entry.id}" value="${(entry.description||'').replace(/"/g,'&quot;')}" placeholder="No description added" maxlength="200">
+         <button class="secondary-btn gl-desc-save" data-id="${entry.id}" style="margin-top:6px;">Save Description</button>`
+      : `<div class="gl-desc${entry.description ? '' : ' none'}">${entry.description || 'No description added'}</div>`;
+
     return `
       <div class="gl-card">
         <button class="gl-delete-btn" data-id="${entry.id}">✕</button>
         <div class="gl-block">
           <div class="gl-datetime">${dateStr}</div>
-          <div class="gl-desc${entry.description ? '' : ' none'}">${entry.description || 'No description added'}</div>
+          ${descBlock}
         </div>
         <div class="gl-block">
           <div class="gl-stats-row">
@@ -871,7 +930,17 @@ function renderGameLog() {
 
   document.querySelectorAll('.gl-delete-btn').forEach(btn => {
     btn.onclick = () => {
+      const entry = latestGameLog.find(e => e.id === parseInt(btn.dataset.id, 10));
+      const label = entry ? new Date(entry.timestamp).toLocaleDateString() : 'this entry';
+      if (!confirm(`Delete the Game Log entry from ${label}? This can't be undone.`)) return;
       socket.emit('delete_game_log_entry', { id: parseInt(btn.dataset.id, 10), pin: glAdminPin });
+    };
+  });
+  document.querySelectorAll('.gl-desc-save').forEach(btn => {
+    btn.onclick = () => {
+      const id = parseInt(btn.dataset.id, 10);
+      const input = document.querySelector(`.gl-desc-edit[data-id="${id}"]`);
+      socket.emit('set_game_log_description', { id, text: input.value, pin: glAdminPin });
     };
   });
 }
