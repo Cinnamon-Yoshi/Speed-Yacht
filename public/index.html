@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Roatan Yahtzee</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='0' y='0' width='100' height='100' rx='20' fill='%230b3d2e'/><g transform='rotate(45 50 50)'><rect x='20' y='20' width='60' height='60' rx='12' fill='%23ffffff'/><circle cx='35' cy='35' r='7' fill='%230b3d2e'/><circle cx='65' cy='35' r='7' fill='%230b3d2e'/><circle cx='50' cy='50' r='7' fill='%230b3d2e'/><circle cx='35' cy='65' r='7' fill='%230b3d2e'/><circle cx='65' cy='65' r='7' fill='%230b3d2e'/></g></svg>">
+
+<!-- Home-screen icon support. iOS Safari specifically ignores SVG for
+     apple-touch-icon (unlike the tab favicon above, which it's fine
+     with) — needs an actual PNG file, hence icon-generation as part of
+     this build rather than reusing the inline-SVG trick. -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0b3d2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Yahtzee">
 <style>
   :root{ --bg:#0b3d2e; --gold:#d4af37; }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -74,6 +85,69 @@
   .fr-row.winner .fr-rank{ opacity:1; color:var(--gold); }
   .fr-name{ flex:1; font-weight:800; }
   .fr-score{ font-weight:900; font-size:1.2em; color:var(--gold); }
+
+  /* ===== Winner photo capture (Results screen) ===== */
+  .wp-prompt{ font-size:0.85em; opacity:0.75; text-align:center; margin:14px 0; line-height:1.4; }
+  .wp-frame{
+    width:200px; height:200px; margin:0 auto 14px; border-radius:16px; overflow:hidden;
+    background:#000; border:2px solid rgba(212,175,55,0.5); position:relative;
+  }
+  .wp-frame video, .wp-frame img{ width:100%; height:100%; object-fit:cover; transform:scaleX(-1); }
+  .wp-btn-row{ display:flex; gap:10px; }
+  .wp-btn-row .primary-btn, .wp-btn-row .secondary-btn{ margin-top:0; }
+  .wp-skip-link{ display:block; text-align:center; font-size:0.78em; opacity:0.55; margin-top:12px; cursor:pointer; text-decoration:underline; }
+  .wp-state{ display:none; }
+  .wp-state.active{ display:block; }
+  .wp-error{ font-size:0.78em; color:#ff8c8c; text-align:center; margin-bottom:10px; }
+
+  .desc-box{ margin-top:14px; }
+  .desc-box .lobby-input{ margin-bottom:8px; }
+
+  /* ===== Game Log screen ===== */
+  .gl-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+  .gl-admin-btn{
+    font-size:0.7em; font-weight:700; opacity:0.55; background:none; border:none; color:#fff; cursor:pointer;
+  }
+  .gl-empty-note{ text-align:center; font-size:0.82em; opacity:0.5; padding:20px; font-style:italic; }
+  .gl-card{ background:rgba(255,255,255,0.05); border-radius:16px; padding:16px; margin-bottom:20px; position:relative; }
+  .gl-block{ margin-bottom:16px; }
+  .gl-block:last-child{ margin-bottom:0; }
+  .gl-datetime{ font-size:1em; font-weight:800; }
+  .gl-desc{ font-size:0.82em; opacity:0.8; line-height:1.45; margin-top:6px; }
+  .gl-desc.none{ opacity:0.4; font-style:italic; }
+  .gl-stats-row{ display:flex; gap:10px; align-items:stretch; }
+  .gl-stats-box{ background:var(--bg); border-radius:10px; padding:10px; flex:1; min-width:0; }
+  .gl-info-box{ background:var(--bg); border-radius:10px; padding:10px; flex:1; min-width:0; }
+  .gl-row{
+    display:flex; align-items:center; gap:8px; padding:9px 10px;
+    background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:6px;
+  }
+  .gl-row:last-child{ margin-bottom:0; }
+  .gl-row.winner{ background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.5); }
+  .gl-rank{ font-weight:900; opacity:0.6; width:20px; text-align:center; }
+  .gl-row.winner .gl-rank{ opacity:1; }
+  .gl-name{ flex:1; font-weight:800; font-size:0.92em; }
+  .gl-score{ font-weight:900; font-size:1em; color:#fff; }
+  .gl-row.winner .gl-score{ color:var(--gold); }
+  .gl-info-row{ display:flex; justify-content:space-between; align-items:center; gap:6px; padding:9px 10px; background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:6px; }
+  .gl-info-row:last-child{ margin-bottom:0; }
+  .gl-info-label{ font-weight:700; font-size:0.85em; opacity:0.85; }
+  .gl-info-value{ font-weight:900; font-size:0.9em; color:var(--gold); }
+  .gl-photo-box{
+    width:100%; aspect-ratio:4/3; border-radius:12px; overflow:hidden;
+    background:linear-gradient(135deg,#4a4030,#2a2a2a); border:1px solid rgba(212,175,55,0.3);
+  }
+  .gl-photo-box img{ width:100%; height:100%; object-fit:cover; }
+  .gl-delete-btn{
+    position:absolute; top:14px; right:14px; width:30px; height:30px; border-radius:50%;
+    background:rgba(220,60,60,0.15); border:1px solid rgba(220,60,60,0.5); color:#ff6b6b;
+    font-size:0.9em; display:none; align-items:center; justify-content:center; cursor:pointer; z-index:2;
+  }
+  .gl-admin-mode .gl-delete-btn{ display:flex; }
+
+  .gamelog-link{
+    text-align:center; font-size:0.78em; opacity:0.55; margin-top:16px; cursor:pointer; text-decoration:underline;
+  }
   .h-sub{ opacity:0.6; font-size:0.85em; text-align:center; margin-bottom:18px; }
 
   .screen{ display:none; }
@@ -158,6 +232,7 @@
     <div class="error-msg" id="lobbyError"></div>
     <input class="lobby-input" id="nameInput" placeholder="Your name" maxlength="20">
     <button class="primary-btn" id="joinBtn">Join</button>
+    <div class="gamelog-link" id="openGameLogFromLobby">📖 Game Log</div>
   </div>
 
   <!-- Waiting Room -->
@@ -228,6 +303,61 @@
   <div class="screen" id="screenResults">
     <div class="h-sub">🏆 Game Complete</div>
     <div id="resultsList"></div>
+
+    <!-- Winner photo capture — only shown to the actual winner -->
+    <div id="winnerPhotoSection" style="display:none;">
+      <div class="wp-state active" id="wpPrompt">
+        <div class="wp-prompt">Add a low-res photo of yourself to go with this win in the Game Log?</div>
+        <button class="primary-btn" id="wpAddBtn">Add Your Photo</button>
+        <div class="wp-skip-link" id="wpSkipLink">Skip — just save the scoreboard</div>
+      </div>
+      <div class="wp-state" id="wpCamera">
+        <div class="wp-error" id="wpError" style="display:none;"></div>
+        <div class="wp-frame"><video id="wpVideo" autoplay playsinline muted></video></div>
+        <div class="wp-btn-row">
+          <button class="secondary-btn" id="wpCancelBtn">Cancel</button>
+          <button class="primary-btn" id="wpCaptureBtn">Capture</button>
+        </div>
+      </div>
+      <div class="wp-state" id="wpReview">
+        <div class="wp-frame"><img id="wpCapturedImg" alt="Captured photo"></div>
+        <div class="wp-btn-row">
+          <button class="secondary-btn" id="wpRetakeBtn">Retake</button>
+          <button class="primary-btn" id="wpSaveBtn">Save to Game Log</button>
+        </div>
+      </div>
+      <div class="wp-state" id="wpDone">
+        <div class="wp-frame" id="wpDoneFrame" style="display:none;"></div>
+        <div class="wp-prompt" style="margin-bottom:0;">Saved to the Game Log.</div>
+      </div>
+    </div>
+
+    <div class="desc-box" id="descBox" style="display:none;">
+      <input class="lobby-input" id="descInput" placeholder="Add a short description (optional)" maxlength="200">
+      <button class="secondary-btn" id="descSaveBtn">Save Description</button>
+    </div>
+
+    <button class="admin-btn" id="viewGameLogBtn" style="margin-top:14px;">📖 View Game Log</button>
+  </div>
+
+  <!-- Game Log -->
+  <div class="screen" id="screenGameLog">
+    <div class="gl-header">
+      <div class="h-sub" style="margin:0;">🏆 Game Log</div>
+      <button class="gl-admin-btn" id="glAdminBtn">🔒 Admin</button>
+    </div>
+    <div class="pin-box" id="glPinBox" style="display:none;">
+      <div class="pin-label">Admin PIN</div>
+      <input type="password" inputmode="numeric" class="pin-input" id="glPinInput" placeholder="••••" maxlength="8">
+      <div class="pin-error" id="glPinError"></div>
+      <div class="pin-btn-row">
+        <button class="secondary-btn" id="glPinCancelBtn">Cancel</button>
+        <button class="primary-btn" id="glPinSubmitBtn">Unlock</button>
+      </div>
+    </div>
+    <div id="gameLogList"></div>
+    <div class="gl-empty-note" id="glEmptyNote" style="display:none;">No games logged yet.</div>
+    <button class="secondary-btn" id="glBackBtn">← Back</button>
   </div>
 
 </div></div>
@@ -239,7 +369,7 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
@@ -532,6 +662,218 @@ function renderResults(state) {
       <span class="fr-score">${r.total}</span>
     </div>
   `).join('');
+
+  // New Game button (host only) — reuse the admin-btn styling, appended
+  // once so repeated renders don't duplicate it.
+  if (amHost && !document.getElementById('newGameBtn')) {
+    const btn = document.createElement('button');
+    btn.className = 'primary-btn';
+    btn.id = 'newGameBtn';
+    btn.style.marginTop = '14px';
+    btn.textContent = 'Start Another Game';
+    btn.onclick = () => socket.emit('new_game');
+    document.getElementById('resultsList').after(btn);
+  }
+
+  renderResultsExtras(ranked);
+}
+
+// ── Winner photo capture + description (Results screen) ────────────
+let wpStream = null;
+let myLatestGameLogEntry = null; // the entry for the game that JUST ended, once we know it
+
+function renderResultsExtras(ranked) {
+  const myName = state_myName();
+  const isWinner = ranked.length > 0 && ranked[0].name === myName;
+  const entry = latestGameLog[0]; // most recent entry — the one that just finished, unshift-ordered
+
+  document.getElementById('winnerPhotoSection').style.display = isWinner ? '' : 'none';
+  document.getElementById('descBox').style.display = entry ? '' : 'none';
+  if (entry) {
+    myLatestGameLogEntry = entry;
+    document.getElementById('descInput').value = entry.description || '';
+  }
+}
+
+function state_myName() {
+  if (!latestState || !myId) return null;
+  const me = latestState.players.find(p => p.id === myId);
+  return me ? me.name : null;
+}
+
+document.getElementById('wpAddBtn').onclick = () => wpStartCamera();
+document.getElementById('wpSkipLink').onclick = () => wpSkip();
+document.getElementById('wpCancelBtn').onclick = () => wpGoTo('wpPrompt');
+document.getElementById('wpCaptureBtn').onclick = () => wpCapture();
+document.getElementById('wpRetakeBtn').onclick = () => wpStartCamera();
+document.getElementById('wpSaveBtn').onclick = () => wpSave();
+
+function wpGoTo(id) {
+  document.querySelectorAll('#winnerPhotoSection .wp-state').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (wpStream) { wpStream.getTracks().forEach(t => t.stop()); wpStream = null; }
+}
+
+async function wpStartCamera() {
+  wpGoTo('wpCamera');
+  const errEl = document.getElementById('wpError');
+  errEl.style.display = 'none';
+  try {
+    wpStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 320 } },
+      audio: false
+    });
+    document.getElementById('wpVideo').srcObject = wpStream;
+  } catch (e) {
+    errEl.textContent = 'Camera not available (' + e.message + ') — you can still skip.';
+    errEl.style.display = 'block';
+  }
+}
+
+function wpSkip() {
+  document.getElementById('wpDoneFrame').style.display = 'none';
+  wpGoTo('wpDone');
+}
+
+function wpCapture() {
+  const video = document.getElementById('wpVideo');
+  const canvas = document.createElement('canvas');
+  const SIZE = 160;
+  canvas.width = SIZE; canvas.height = SIZE;
+  const ctx = canvas.getContext('2d');
+  ctx.translate(SIZE, 0); ctx.scale(-1, 1);
+  const side = Math.min(video.videoWidth, video.videoHeight);
+  const sx = (video.videoWidth - side) / 2, sy = (video.videoHeight - side) / 2;
+  ctx.drawImage(video, sx, sy, side, side, 0, 0, SIZE, SIZE);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+  document.getElementById('wpCapturedImg').src = dataUrl;
+  wpGoTo('wpReview');
+}
+
+function wpSave() {
+  const dataUrl = document.getElementById('wpCapturedImg').src;
+  if (myLatestGameLogEntry) {
+    socket.emit('set_winner_photo', { id: myLatestGameLogEntry.id, photo: dataUrl });
+  }
+  const doneFrame = document.getElementById('wpDoneFrame');
+  doneFrame.style.display = '';
+  doneFrame.innerHTML = `<img src="${dataUrl}" style="transform:none;">`;
+  wpGoTo('wpDone');
+}
+
+document.getElementById('descSaveBtn').onclick = () => {
+  if (!myLatestGameLogEntry) return;
+  socket.emit('set_game_log_description', { id: myLatestGameLogEntry.id, text: document.getElementById('descInput').value });
+};
+
+// ── Game Log screen ─────────────────────────────────────────────────
+let latestGameLog = [];
+let glAdminPin = null;
+let glReturnScreen = 'screenLobby';
+
+socket.on('game_log_update', (log) => {
+  latestGameLog = log;
+  const active = document.querySelector('.screen.active');
+  if (active && active.id === 'screenGameLog') renderGameLog();
+  if (active && active.id === 'screenResults' && latestState) renderResultsExtras(
+    latestState.players.map(p => ({ name: p.name, total: latestState.game.players[p.id] ? latestState.game.players[p.id].total : 0 })).sort((a,b)=>b.total-a.total)
+  );
+});
+
+document.getElementById('openGameLogFromLobby').onclick = () => {
+  glReturnScreen = 'screenLobby';
+  showScreen('screenGameLog');
+  renderGameLog();
+};
+document.getElementById('viewGameLogBtn').onclick = () => {
+  glReturnScreen = 'screenResults';
+  showScreen('screenGameLog');
+  renderGameLog();
+};
+document.getElementById('glBackBtn').onclick = () => showScreen(glReturnScreen);
+
+document.getElementById('glAdminBtn').onclick = () => {
+  document.getElementById('glPinBox').style.display = '';
+  document.getElementById('glPinError').textContent = '';
+  document.getElementById('glPinInput').value = '';
+};
+document.getElementById('glPinCancelBtn').onclick = () => {
+  document.getElementById('glPinBox').style.display = 'none';
+};
+document.getElementById('glPinSubmitBtn').onclick = () => {
+  glAdminPin = document.getElementById('glPinInput').value;
+  document.getElementById('glPinBox').style.display = 'none';
+  document.getElementById('gameLogList').closest('.screen').classList.add('gl-admin-mode');
+  renderGameLog(); // rebuild so delete buttons attach correctly
+};
+
+socket.on('game_log_delete_result', ({ success, message }) => {
+  if (!success) {
+    glAdminPin = null;
+    document.getElementById('screenGameLog').classList.remove('gl-admin-mode');
+    alert('Delete failed: ' + (message || 'incorrect PIN'));
+  }
+});
+
+const GL_CATEGORY_ROWS_KEEP = 4; // scores box always shows exactly the top 4 players ranked
+
+function renderGameLog() {
+  const listEl = document.getElementById('gameLogList');
+  const emptyNote = document.getElementById('glEmptyNote');
+  if (!latestGameLog.length) {
+    listEl.innerHTML = '';
+    emptyNote.style.display = '';
+    return;
+  }
+  emptyNote.style.display = 'none';
+
+  listEl.innerHTML = latestGameLog.map(entry => {
+    const date = new Date(entry.timestamp);
+    const dateStr = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+      ' · ' + date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+    const scoreRows = entry.players.map((p, i) => `
+      <div class="gl-row${i===0?' winner':''}">
+        <span class="gl-rank">${i===0 ? '🏆' : (i+1)}</span>
+        <span class="gl-name">${p.name}</span>
+        <span class="gl-score">${p.total}</span>
+      </div>
+    `).join('');
+
+    const infoRows = `
+      <div class="gl-info-row"><span class="gl-info-label">Rolls</span><span class="gl-info-value">${entry.settings.rollsPerTurn}</span></div>
+      <div class="gl-info-row"><span class="gl-info-label">63 Bonus</span><span class="gl-info-value">${entry.settings.upperBonus}</span></div>
+      <div class="gl-info-row"><span class="gl-info-label">1st Yaht</span><span class="gl-info-value">${entry.settings.firstYahtzee}</span></div>
+      <div class="gl-info-row"><span class="gl-info-label">Yaht Bonus</span><span class="gl-info-value">${entry.settings.yahtzeeBonus}</span></div>
+    `;
+
+    const photoBlock = entry.photo
+      ? `<div class="gl-block"><div class="gl-photo-box"><img src="${entry.photo}"></div></div>`
+      : ''; // omitted entirely when absent — no reserved space
+
+    return `
+      <div class="gl-card">
+        <button class="gl-delete-btn" data-id="${entry.id}">✕</button>
+        <div class="gl-block">
+          <div class="gl-datetime">${dateStr}</div>
+          <div class="gl-desc${entry.description ? '' : ' none'}">${entry.description || 'No description added'}</div>
+        </div>
+        <div class="gl-block">
+          <div class="gl-stats-row">
+            <div class="gl-stats-box">${scoreRows}</div>
+            <div class="gl-info-box">${infoRows}</div>
+          </div>
+        </div>
+        ${photoBlock}
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('.gl-delete-btn').forEach(btn => {
+    btn.onclick = () => {
+      socket.emit('delete_game_log_entry', { id: parseInt(btn.dataset.id, 10), pin: glAdminPin });
+    };
+  });
 }
 
 const PIP_POS = {
