@@ -17,7 +17,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Speed-Yacht">
 <style>
-  :root{ --bg:#0b3d2e; --gold:#d4af37; --die-size:56px; }
+  :root{
+    --bg:#0b3d2e; --gold:#d4af37; --die-size:56px;
+    --cat-col-width:calc(var(--die-size) * 2 + 9px); --player-col-width:var(--die-size);
+    --player-count:2; --row-height:50px; --gap:4px;
+  }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{
     margin:0; background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -25,24 +29,60 @@
   }
   .wrap{max-width:430px;width:100%;}
   .phone{ background:var(--bg); border-radius:20px; padding:16px; }
-  .h-title{ font-weight:800; font-size:1.3em; text-align:center; margin-bottom:2px; display:flex; align-items:center; justify-content:center; gap:8px; }
+  /* Single header row used everywhere — title left, version right, ONE
+     instance total. Previously this was duplicated (once under the
+     title, once again on the Playing screen), which is exactly the
+     kind of thing direct ground-truth comparison catches immediately
+     and code-reading alone did not. */
+  .header{ display:flex; justify-content:space-between; align-items:center; padding-top:2px; margin-bottom:8px; }
+  .h-title{ font-weight:800; font-size:1.05em; display:flex; align-items:center; gap:6px; }
   .h-icon{ width:1.1em; height:1.1em; flex:0 0 auto; }
-  .app-version{ font-size:0.72em; font-weight:400; opacity:0.5; text-align:center; margin-bottom:10px; }
+  .version-tag{ font-size:0.72em; font-weight:400; opacity:0.55; align-self:center; }
 
-  /* ===== Playing screen ===== */
-  .play-header{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-  .round-box{
-    background:rgba(0,0,0,0.25); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
-    padding:8px 12px; text-align:center; flex:0 0 auto;
+  /* ===== Playing screen — header-bar (round + player names) sits
+     between the dice row and the scoresheet, NOT next to the dice/timer
+     the way it was before. Timer is its own full-width row after that. ===== */
+  .grid-row{
+    display:grid; grid-template-columns:var(--cat-col-width) repeat(var(--player-count), var(--player-col-width));
+    gap:var(--gap); align-items:center; height:var(--row-height);
   }
-  .round-lbl{ font-size:0.62em; font-weight:700; opacity:0.6; text-transform:uppercase; }
-  .round-num{ font-weight:900; color:var(--gold); font-size:1em; }
-  .timer-track{ flex:1; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
-  .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear, background-color 1s linear; }
+  .header-bar{ background:#123a2c; border-radius:8px; padding:0; margin-bottom:6px; }
+  .hb-round-box{ padding:2px 4px; text-align:center; }
+  .hb-round-box .rd-num{ font-size:1.3em; font-weight:900; color:var(--gold); line-height:1.1; }
+  .hb-round-box .rd-num .rd-of{ font-weight:400; color:#fff; font-size:0.85em; }
+  .hb-round-box .rd-lbl{ font-size:0.6em; opacity:0.65; text-transform:uppercase; letter-spacing:0.4px; }
+  .hb-cell{ text-align:center; font-weight:800; font-size:0.85em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  .timer-row{ margin:0 0 10px; }
+  .timer-track{ width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
+  .timer-fill{ height:100%; width:100%; background:var(--gold); border-radius:4px; transition:width 1s linear, background-color 1s linear; }
   .timer-fill.low{ background:#e01010; }
 
-  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; }
-  .dice-slider{ position:relative; width:100%; max-width:340px; height:var(--die-size); margin:0 auto; }
+  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; align-items:center; }
+  .dice-slider{ position:relative; flex:1; max-width:290px; height:var(--die-size); }
+
+  /* Roll button — ported from the proven design: a square button sized
+     like a die, sitting inline as the FIRST element in the dice row,
+     not a full-width button below. OOPS/undo morphs this same element
+     (border/background/label swap to red) rather than being separate. */
+  .roll-die-btn{
+    width:var(--die-size); height:var(--die-size); flex:0 0 var(--die-size);
+    border:2px solid #ffffff; border-radius:12px; background:#07261e; color:var(--gold);
+    font-weight:900; cursor:pointer; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    padding:2px; gap:1px; box-shadow:inset 0 0 8px rgba(0,0,0,0.6), 0 0 10px rgba(255,255,255,0.15);
+    transition:background-color 0.2s, border-color 0.2s, color 0.2s;
+  }
+  .roll-die-btn:disabled{ background:#1a241d; color:#555; border-color:rgba(255,255,255,0.25); box-shadow:none; }
+  .roll-die-btn .rl-label{ font-size:1.05em; letter-spacing:0.5px; font-weight:900; line-height:1; color:var(--gold); }
+  .roll-die-btn .rl-num-single{ font-size:1.45em; font-weight:900; line-height:1; color:#ffffff; }
+  .roll-die-btn:disabled .rl-num-single{ opacity:0.4; }
+  .roll-die-btn.oops-mode{
+    border-color:#e74c3c; background:#2c1212; color:#e74c3c;
+    box-shadow:inset 0 0 8px rgba(0,0,0,0.6), 0 0 10px rgba(231,76,60,0.35);
+  }
+  .roll-die-btn.oops-mode .rl-label{ color:#e74c3c; font-size:1.05em; font-weight:900; line-height:1.15; }
+  .roll-die-btn.oops-mode .rl-num-single{ color:#ffffff; font-size:1.05em; font-weight:900; line-height:1.15; }
 
   .die-container{
     width:var(--die-size); height:var(--die-size); position:absolute; top:0; left:0;
@@ -92,6 +132,19 @@
 
   .pipgrid{ position:absolute; inset:14%; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
   .pip{ width:65%; height:65%; margin:auto; border-radius:50%; background:#111; justify-self:center; align-self:center; }
+
+  /* Category icons — pictorial dice representations for each scoresheet
+     row, ported directly from the proven single-device design rather
+     than plain text labels. */
+  .cat-icon{ display:flex; align-items:center; gap:3px; width:100%; justify-content:center; height:100%; }
+  .cat-icon.stack{ flex-direction:column; gap:2px; align-items:center; justify-content:center; }
+  .cat-icon.stack .row{ display:flex; gap:2px; }
+  .mini-die{ position:relative; width:19px; height:19px; background:rgba(255,255,255,0.92); border-radius:4px; flex:0 0 auto; }
+  .mini-die.solo{ width:28px; height:28px; border-radius:6px; }
+  .mini-die .pipgrid{ inset:16%; }
+  .mini-die .pip{ background:#111; }
+  .chance-mark{ font-size:1.5em; font-weight:900; color:#fff; line-height:1; }
+  .cat-icon .trophy{ font-size:1.3em; line-height:1; }
   .hold-lbl{ position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:3px; font-size:0.6em; font-weight:700; opacity:0.6; white-space:nowrap; }
 
   .play-status{ text-align:center; font-size:0.78em; opacity:0.65; margin:8px 0 14px; min-height:1.2em; }
@@ -102,41 +155,54 @@
      ledger), a distinct darker header bar, fixed row height, and a
      visually heavier Total row — not individually gapped pill rows. */
   .scoresheet{
-    border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden;
+    border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden; padding:0 4px;
   }
   .sc-header{
-    display:flex; background:#123a2c; height:38px; align-items:center;
-    font-size:0.66em; font-weight:800; opacity:0.7; padding:0 10px 0 0;
+    background:#123a2c; border-radius:8px; margin:4px 0; font-size:0.66em; font-weight:800; opacity:0.7;
   }
-  .sc-header .sc-name-col{ flex:1.5; }
-  .sc-header .sc-player-col{ flex:1; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sc-row{
-    display:flex; align-items:stretch; height:44px;
-    border-bottom:1px solid rgba(255,255,255,0.08);
-  }
+  .sc-header .sc-name-col{ padding-left:10px; }
+  .sc-header .sc-player-col{ text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sc-row{ border-bottom:1px solid rgba(255,255,255,0.08); }
   .sc-row:last-child{ border-bottom:none; }
   .sc-cat-cell{
-    flex:1.5; padding:0 0 0 10px; font-size:0.76em; font-weight:600; opacity:0.9;
-    display:flex; align-items:center;
+    padding:0 0 0 10px; font-size:0.76em; font-weight:600; opacity:0.9;
+    display:flex; align-items:center; height:100%;
   }
+  .sc-cat-cell.sc-cat-icon-cell{ padding-left:0; justify-content:center; }
   .sc-player-cell{
-    flex:1; font-size:0.85em; font-weight:400; text-align:center;
-    display:flex; align-items:center; justify-content:center; color:#fff;
+    font-size:0.85em; font-weight:400; text-align:center;
+    display:flex; align-items:center; justify-content:center; color:#fff; height:100%;
   }
-  .sc-player-cell.mine.pickable{
-    background:rgba(212,175,55,0.12); border-top:1px solid rgba(212,175,55,0.4); border-bottom:1px solid rgba(212,175,55,0.4);
-    cursor:pointer; color:var(--gold); font-weight:800;
+  /* The CURRENT player's own pickable cell spans icon+score as ONE
+     merged, gold-outlined unit — matching the proven .cat-player-merged/
+     .thin-outline treatment, not just a small highlighted number cell. */
+  .cat-player-merged{
+    grid-column:span 2; display:grid; grid-template-columns:var(--cat-col-width) var(--player-col-width);
+    gap:var(--gap); align-items:center; cursor:pointer; border-radius:8px; height:100%;
   }
-  .sc-player-cell.mine.pickable.zero{ opacity:0.4; }
+  .cat-player-merged.thin-outline{ outline:1.5px solid var(--gold); outline-offset:-1.5px; }
+  .cat-player-merged.zero-preview{ opacity:0.4; }
+  .cat-player-merged .merged-icon{ display:flex; justify-content:center; height:100%; align-items:center; }
+  .cat-player-merged .merged-score{ text-align:center; font-weight:800; color:var(--gold); }
   .sc-player-cell.scored{ color:#fff; font-weight:400; }
   .sc-total-row{
-    height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none;
+    height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none; border-radius:8px; margin-top:4px;
   }
-  .sc-total-row .sc-cat-cell{ font-weight:800; opacity:1; font-size:0.85em; }
-  .sc-total-row .sc-player-cell{ font-weight:800; font-size:1.05em; color:#fff; }
+  .sc-total-row .sc-cat-cell{ font-weight:800; opacity:1; font-size:1.5em; }
+  .sc-total-row .sc-player-cell{ font-weight:800; font-size:1.1em; color:#fff; }
   .sc-bonus-row{ height:36px; }
   .sc-bonus-row .sc-cat-cell{ font-style:italic; opacity:0.65; font-size:0.68em; justify-content:center; padding-left:0; text-align:center; }
   .sc-bonus-row .sc-player-cell{ font-style:italic; opacity:0.65; font-size:0.75em; }
+
+  /* Live "need N more" progress toward the 63 upper-section bonus —
+     ported from the proven design, shown right after Sixes. */
+  .sc-upper-bonus-row .sc-cat-cell{
+    font-style:italic; opacity:0.7; font-size:0.62em; line-height:1.3;
+    justify-content:center; text-align:center; padding-left:0;
+  }
+  .sc-upper-bonus-row .sc-player-cell{ font-weight:800; font-size:0.85em; color:var(--gold); }
+  .bonus-need{ font-size:0.85em; font-weight:400; opacity:0.75; color:#fff; }
+  .bonus-missed{ opacity:0.35; font-weight:400; color:#fff; }
 
   /* OOPS/undo morphs the SAME roll button rather than sitting as a
      separate element — ported from the proven single-device design
@@ -146,31 +212,43 @@
     background:#2c1212; color:#e74c3c; border:1px solid #e74c3c;
   }
 
-  /* ===== Round Summary screen ===== */
+  /* ===== Round Summary screen — grid structure ported exactly from
+     the proven design (28% 18% 8% 18% 28% columns: name | took | value
+     | for | category icon). The 63-bonus badge is a genuine addition
+     beyond the proven baseline, not a port. ===== */
+  .rs-list{ width:100%; margin-bottom:8px; }
+  .rs-title{ font-size:1.4em; font-weight:800; color:var(--gold); margin-bottom:14px; text-align:center; }
   .rs-row{
-    display:flex; align-items:center; gap:10px; padding:12px 14px;
-    background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px;
+    display:grid; grid-template-columns:28% 18% 8% 18% 28%; align-items:center;
+    padding:10px 8px; background:rgba(255,255,255,0.05); border-radius:8px;
+    margin-bottom:10px; min-height:54px;
   }
-  .rs-name{ flex:0 0 auto; font-weight:800; width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .rs-took{ flex:1; font-size:0.85em; opacity:0.75; }
-  .rs-took .rs-cat-name{ color:#fff; font-weight:700; }
-  .rs-score{ font-weight:900; font-size:1.1em; color:var(--gold); }
+  .rs-name{ font-weight:800; font-size:0.85em; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:6px; }
+  .rs-took{ font-size:0.75em; opacity:0.7; text-align:center; }
+  .rs-amt{ font-size:1.15em; font-weight:900; color:var(--gold); text-align:center; }
+  .rs-for{ font-size:0.75em; opacity:0.7; text-align:center; }
+  .rs-cat{ display:flex; justify-content:flex-start; align-items:center; gap:3px; overflow:visible; padding-left:4px; }
   .rs-bonus-badge{
-    font-size:0.65em; font-weight:800; color:var(--gold); background:rgba(212,175,55,0.15);
-    border:1px solid rgba(212,175,55,0.5); border-radius:8px; padding:2px 6px; margin-left:6px;
+    font-size:0.6em; font-weight:800; color:var(--gold); background:rgba(212,175,55,0.15);
+    border:1px solid rgba(212,175,55,0.5); border-radius:8px; padding:2px 5px; margin-left:4px; white-space:nowrap;
   }
   .rs-next-hint{ text-align:center; font-size:0.78em; opacity:0.5; margin-top:10px; font-style:italic; }
 
   /* ===== Results screen ===== */
   .fr-row{
     display:flex; align-items:center; gap:10px; padding:12px 14px;
-    background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px;
+    background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px; text-align:left;
+    opacity:0; transform:translateY(10px); transition:opacity .4s ease, transform .4s ease;
   }
+  .fr-row.revealed{ opacity:1; transform:translateY(0); }
   .fr-row.winner{ background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.5); }
-  .fr-rank{ font-weight:900; width:22px; opacity:0.7; }
+  .fr-rank{ font-weight:900; font-size:1.1em; width:22px; opacity:0.7; }
   .fr-row.winner .fr-rank{ opacity:1; color:var(--gold); }
   .fr-name{ flex:1; font-weight:800; }
   .fr-score{ font-weight:900; font-size:1.2em; color:var(--gold); }
+  .fr-trophy{ font-size:1.3em; }
+  #newGameBtn{ opacity:0; pointer-events:none; transition:opacity .4s ease; }
+  #newGameBtn.revealed{ opacity:1; pointer-events:auto; }
 
   /* ===== Winner photo capture (Results screen) ===== */
   .wp-prompt{ font-size:0.85em; opacity:0.75; text-align:center; margin:14px 0; line-height:1.4; }
@@ -317,11 +395,13 @@
 <body>
 <div class="wrap"><div class="phone">
 
-  <div class="h-title">
-    <svg class="h-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" rx="20" fill="#0b3d2e"/><g transform="rotate(45 50 50)"><rect x="20" y="20" width="60" height="60" rx="12" fill="#ffffff"/><circle cx="35" cy="35" r="7" fill="#0b3d2e"/><circle cx="65" cy="35" r="7" fill="#0b3d2e"/><circle cx="50" cy="50" r="7" fill="#0b3d2e"/><circle cx="35" cy="65" r="7" fill="#0b3d2e"/><circle cx="65" cy="65" r="7" fill="#0b3d2e"/></g></svg>
-    Speed-Yacht
+  <div class="header">
+    <div class="h-title">
+      <svg class="h-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" rx="20" fill="#0b3d2e"/><g transform="rotate(45 50 50)"><rect x="20" y="20" width="60" height="60" rx="12" fill="#ffffff"/><circle cx="35" cy="35" r="7" fill="#0b3d2e"/><circle cx="65" cy="35" r="7" fill="#0b3d2e"/><circle cx="50" cy="50" r="7" fill="#0b3d2e"/><circle cx="35" cy="65" r="7" fill="#0b3d2e"/><circle cx="65" cy="65" r="7" fill="#0b3d2e"/></g></svg>
+      Speed-Yacht
+    </div>
+    <span class="version-tag" id="appVersion"></span>
   </div>
-  <div class="app-version" id="appVersion"></div>
   <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
 
   <!-- Lobby -->
@@ -407,14 +487,15 @@
 
   <!-- Playing -->
   <div class="screen" id="screenPlaying">
-    <div class="play-header">
-      <div class="round-box"><div class="round-lbl">Round</div><div class="round-num" id="roundNum">1 of 13</div></div>
-      <div class="timer-track" id="timerTrack" style="display:none;"><div class="timer-fill" id="timerFill"></div></div>
-      <div class="app-version" id="appVersionPlaying" style="margin:0;flex:0 0 auto;"></div>
+    <div class="dice-row">
+      <button class="roll-die-btn" id="rollBtn"><span class="rl-label">ROLL</span><span class="rl-num-single">1</span></button>
+      <div class="dice-slider" id="diceSlider"></div>
     </div>
 
-    <div class="dice-row"><div class="dice-slider" id="diceSlider"></div></div>
-    <button class="primary-btn" id="rollBtn">Roll</button>
+    <div class="grid-row header-bar" id="headerBar"></div>
+    <div class="timer-row" id="timerRow" style="display:none;">
+      <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+    </div>
     <div class="play-status" id="playStatus"></div>
 
     <div class="scoresheet" id="scoresheet"></div>
@@ -422,8 +503,8 @@
 
   <!-- Round Summary -->
   <div class="screen" id="screenRoundSummary">
-    <div class="h-sub">Scores this round</div>
-    <div id="roundSummaryList"></div>
+    <div class="rs-title">Scores played that round:</div>
+    <div class="rs-list" id="roundSummaryList"></div>
     <div class="rs-next-hint">Next round starting…</div>
   </div>
 
@@ -488,13 +569,11 @@
 <script src="/socket.io/socket.io.js"></script>
 <script>
 // Single source of truth for the displayed version — bump this (and
-// package.json's "version") on every meaningful change. Shown on the
-// Lobby/home screen here; ALSO needs to render on the scorecard screen
-// once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
-// so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.9';
+// package.json's "version") on every meaningful change. One shared
+// header (see .header/#appVersion) shows it on every screen now,
+// rather than a separate duplicated tag per screen.
+const APP_VERSION = '1.13';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
-document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
 const socket = io();
 let myId = null;
@@ -772,9 +851,32 @@ function tryFinishRollAnim() {
   }
 }
 
+function displayPlayers(state) {
+  // The merged icon+score cell (see renderScoresheet) only positions
+  // correctly in CSS Grid if "me" is a fixed, known column — the proven
+  // design assumes this because its single local player is always
+  // first. In the real multiplayer room, "myId" could be anyone in join
+  // order, so the display order is reordered (not the actual room
+  // data) to put my own column first, keeping the grid math simple and
+  // — as a side benefit — putting your own scores somewhere predictable
+  // to find.
+  const mine = state.players.filter(p => p.id === myId);
+  const others = state.players.filter(p => p.id !== myId);
+  return mine.concat(others);
+}
+
+function renderHeaderBar(state) {
+  const g = state.game;
+  const players = displayPlayers(state);
+  document.documentElement.style.setProperty('--player-count', players.length);
+  let html = `<div class="hb-round-box"><div class="rd-lbl">Round</div><div class="rd-num">${g.round} <span class="rd-of">of</span> ${g.totalRounds}</div></div>`;
+  players.forEach(p => { html += `<div class="hb-cell">${p.name}</div>`; });
+  document.getElementById('headerBar').innerHTML = html;
+}
+
 function renderPlaying(state) {
   const g = state.game;
-  document.getElementById('roundNum').textContent = `${g.round} of ${g.totalRounds}`;
+  renderHeaderBar(state);
 
   const myG = g.players[myId];
   if (!myG) return;
@@ -789,15 +891,15 @@ function renderPlaying(state) {
   }
 
   // Timer (Full-30 mode only)
-  const timerTrack = document.getElementById('timerTrack');
+  const timerRow = document.getElementById('timerRow');
   if (g.roundEndsAt) {
-    timerTrack.style.display = '';
+    timerRow.style.display = '';
     const msLeft = Math.max(0, g.roundEndsAt - Date.now());
     const fillEl = document.getElementById('timerFill');
     fillEl.style.width = Math.round((msLeft/30000)*100) + '%';
     fillEl.classList.toggle('low', msLeft <= 5000);
   } else {
-    timerTrack.style.display = 'none';
+    timerRow.style.display = 'none';
   }
 
   // Fresh round -> fresh visual order (a held die's position is
@@ -843,12 +945,16 @@ function renderPlaying(state) {
   if (canUndo) {
     rollBtn.classList.add('oops-mode');
     rollBtn.disabled = false;
-    rollBtn.textContent = '↩ OOPS — Undo My Pick';
+    rollBtn.innerHTML = '<span class="rl-label">OOPS</span><span class="rl-num-single">UNDO</span>';
     rollBtn.onclick = () => socket.emit('undo_pick');
   } else {
     rollBtn.classList.remove('oops-mode');
     rollBtn.disabled = !canInteract || rollsLeft <= 0 || isRollingLocally;
-    rollBtn.textContent = isRollingLocally ? 'Rolling…' : (canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round');
+    // Matches the proven design's semantic: shows which roll you're ABOUT
+    // TO make (or just made), counting up — "1" before your first roll,
+    // then the actual roll count — not a countdown of rolls remaining.
+    const displayNum = myG.rollsUsed === 0 ? 1 : myG.rollsUsed;
+    rollBtn.innerHTML = `<span class="rl-label">${isRollingLocally ? '…' : 'ROLL'}</span><span class="rl-num-single">${displayNum}</span>`;
     rollBtn.onclick = requestRoll;
   }
 
@@ -931,36 +1037,81 @@ function swapSlots(a, b, draggedEl, step) {
   draggedEl.__didSwap = true;
 }
 
+function clientUpperSum(scores) {
+  return ['ones','twos','threes','fours','fives','sixes'].reduce((t,k) => t + (scores[k] || 0), 0);
+}
+
 function renderScoresheet(state) {
   const g = state.game;
-  const players = state.players;
+  const players = displayPlayers(state); // "me" always first — see displayPlayers()
   const myG = g.players[myId];
 
-  let header = '<div class="sc-header"><div class="sc-name-col"></div>' +
+  let header = '<div class="sc-header grid-row"><div class="sc-name-col"></div>' +
     players.map(p => `<div class="sc-player-col">${p.name}</div>`).join('') + '</div>';
 
-  let rows = CATEGORY_ORDER.map(key => {
-    const cells = players.map(p => {
-      const pg = g.players[p.id];
-      if (!pg) return '<div class="sc-player-cell">—</div>';
-      const hasScore = Object.prototype.hasOwnProperty.call(pg.scores, key);
-      if (hasScore) {
-        return `<div class="sc-player-cell scored">${pg.scores[key]}</div>`;
-      }
-      if (p.id === myId && myG && !myG.doneThisRound && myG.rollsUsed > 0) {
-        const preview = previewScoreFor(key, myG.dice, state.settings);
-        return `<div class="sc-player-cell mine pickable${preview===0?' zero':''}" data-key="${key}">${preview}</div>`;
-      }
-      return '<div class="sc-player-cell">—</div>';
-    }).join('');
-    return `<div class="sc-row"><div class="sc-cat-cell">${CATEGORY_LABELS[key]}</div>${cells}</div>`;
-  }).join('');
+  function playerCell(p, key) {
+    const pg = g.players[p.id];
+    if (!pg) return '<div class="sc-player-cell">—</div>';
+    const hasScore = Object.prototype.hasOwnProperty.call(pg.scores, key);
+    if (hasScore) return `<div class="sc-player-cell scored">${pg.scores[key]}</div>`;
+    if (p.id === myId && myG && !myG.doneThisRound && myG.rollsUsed > 0) {
+      // Live pickable preview for MY column only — rendered as the
+      // merged icon+score cell below instead of a plain cell, so this
+      // path only fires for other players' (never-pickable) columns.
+      return null;
+    }
+    return '<div class="sc-player-cell">—</div>';
+  }
+
+  let rows = '';
+  CATEGORY_ORDER.forEach(key => {
+    const mine = players[0];
+    const myPg = g.players[mine.id];
+    const iAmPickable = mine.id === myId && myPg && !myPg.doneThisRound && myPg.rollsUsed > 0
+      && !Object.prototype.hasOwnProperty.call(myPg.scores, key);
+
+    let firstCellHtml;
+    if (iAmPickable) {
+      const preview = previewScoreFor(key, myPg.dice, state.settings);
+      firstCellHtml = `<div class="cat-player-merged thin-outline${preview===0?' zero-preview':''}" data-key="${key}">
+        <div class="merged-icon">${catIconHtml(key)}</div>
+        <div class="merged-score">${preview}</div>
+      </div>`;
+    } else {
+      firstCellHtml = `<div class="sc-cat-cell sc-cat-icon-cell">${catIconHtml(key)}</div>${playerCell(mine, key)}`;
+    }
+
+    const restCells = players.slice(1).map(p => playerCell(p, key)).join('');
+    rows += `<div class="sc-row grid-row">${firstCellHtml}${restCells}</div>`;
+
+    // Live "need N more" progress toward the upper-section bonus, shown
+    // right after Sixes — ported from the proven design rather than the
+    // simpler "did they get it or not" I'd built. Three states: already
+    // qualified (+bonus, matches what lands in the total), finished the
+    // whole upper section without qualifying (dimmed dash, no longer
+    // possible), or still in progress (how many points still needed).
+    if (key === 'sixes') {
+      const upperCats = ['ones','twos','threes','fours','fives','sixes'];
+      const bonusCells = players.map(p => {
+        const pg = g.players[p.id];
+        if (!pg) return '<div class="sc-player-cell">—</div>';
+        const ut = clientUpperSum(pg.scores);
+        const doneUpper = upperCats.every(c => Object.prototype.hasOwnProperty.call(pg.scores, c));
+        let content;
+        if (ut >= 63) content = `+${state.settings.upperBonus}`;
+        else if (doneUpper) content = `<span class="bonus-missed">–</span>`;
+        else content = `<span class="bonus-need">(${63-ut})</span>`;
+        return `<div class="sc-player-cell">${content}</div>`;
+      }).join('');
+      rows += `<div class="sc-row grid-row sc-upper-bonus-row"><div class="sc-cat-cell">63 Bonus<br>(need)</div>${bonusCells}</div>`;
+    }
+  });
 
   const totalCells = players.map(p => {
     const pg = g.players[p.id];
     return `<div class="sc-player-cell">${pg ? pg.total : 0}</div>`;
   }).join('');
-  const totalRow = `<div class="sc-row sc-total-row"><div class="sc-cat-cell">Total</div>${totalCells}</div>`;
+  const totalRow = `<div class="sc-row grid-row sc-total-row"><div class="sc-cat-cell">Total</div>${totalCells}</div>`;
 
   const bonusCells = players.map(p => {
     const pg = g.players[p.id];
@@ -968,29 +1119,39 @@ function renderScoresheet(state) {
     const amount = count * state.settings.yahtzeeBonus;
     return `<div class="sc-player-cell${count>0?' scored':''}">${count>0 ? '+'+amount : '—'}</div>`;
   });
-  const bonusRow = `<div class="sc-row sc-bonus-row"><div class="sc-cat-cell">Yahtzee Bonus</div>${bonusCells.join('')}</div>`;
+  const bonusRow = `<div class="sc-row grid-row sc-bonus-row"><div class="sc-cat-cell">Yahtzee Bonus</div>${bonusCells.join('')}</div>`;
 
   document.getElementById('scoresheet').innerHTML = header + rows + bonusRow + totalRow;
-  document.querySelectorAll('.sc-player-cell.pickable').forEach(el => {
+  document.querySelectorAll('.cat-player-merged').forEach(el => {
     el.onclick = () => socket.emit('pick_category', el.dataset.key);
   });
 }
 
 function renderRoundSummary(state) {
   const g = state.game;
-  const summary = g.roundSummary || [];
+  const summary = (g.roundSummary || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('roundSummaryList').innerHTML = summary.map(entry => {
-    const took = entry.key
-      ? `took <span class="rs-cat-name">${CATEGORY_LABELS[entry.key] || entry.key}</span>`
-      : 'no score this round';
-    const bonusBadge = entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : '';
-    return `
-      <div class="rs-row">
+    if (!entry.key) {
+      return `<div class="rs-row">
         <span class="rs-name">${entry.name}</span>
-        <span class="rs-took">${took}${bonusBadge}</span>
-        ${entry.key ? `<span class="rs-score">${entry.val}</span>` : ''}
-      </div>
-    `;
+        <span class="rs-took">took</span>
+        <span class="rs-amt">–</span>
+        <span class="rs-for">for</span>
+        <span class="rs-cat">no score</span>
+      </div>`;
+    }
+    // "63 BONUS!" badge is an addition beyond the proven design (which
+    // never actually implemented the badge, despite it being on the
+    // original backlog) — kept as a genuine improvement, layered onto
+    // the otherwise-exact proven row structure.
+    const bonusBadge = entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : '';
+    return `<div class="rs-row">
+      <span class="rs-name">${entry.name}</span>
+      <span class="rs-took">took</span>
+      <span class="rs-amt">${entry.val}</span>
+      <span class="rs-for">for</span>
+      <span class="rs-cat">${catIconHtml(entry.key)}${bonusBadge}</span>
+    </div>`;
   }).join('');
 }
 
@@ -998,24 +1159,48 @@ function renderResults(state) {
   const ranked = state.players
     .map(p => ({ name: p.name, total: state.game.players[p.id] ? state.game.players[p.id].total : 0 }))
     .sort((a, b) => b.total - a.total);
-  document.getElementById('resultsList').innerHTML = ranked.map((r, i) => `
-    <div class="fr-row${i===0?' winner':''}">
-      <span class="fr-rank">${i+1}</span>
-      <span class="fr-name">${r.name}</span>
-      <span class="fr-score">${r.total}</span>
-    </div>
-  `).join('');
 
-  // New Game button (host only) — reuse the admin-btn styling, appended
-  // once so repeated renders don't duplicate it.
-  if (amHost && !document.getElementById('newGameBtn')) {
-    const btn = document.createElement('button');
-    btn.className = 'primary-btn';
-    btn.id = 'newGameBtn';
-    btn.style.marginTop = '14px';
-    btn.textContent = 'Start Another Game';
-    btn.onclick = () => socket.emit('new_game');
-    document.getElementById('resultsList').after(btn);
+  // Only build + animate once per game-over — renderResults can be
+  // called again by unrelated state_updates (e.g. Game Log changes)
+  // while still on this screen, and re-running the reveal each time
+  // would be a jarring reset of an animation that already played.
+  if (!document.getElementById('resultsList').dataset.built) {
+    document.getElementById('resultsList').dataset.built = '1';
+    document.getElementById('resultsList').innerHTML = ranked.map((r, i) => `
+      <div class="fr-row${i===0?' winner':''}">
+        <span class="fr-rank">${i+1}</span>
+        <span class="fr-name">${r.name}</span>
+        ${i===0 ? '<span class="fr-trophy">🏆</span>' : ''}
+        <span class="fr-score">${r.total}</span>
+      </div>
+    `).join('');
+
+    if (amHost && !document.getElementById('newGameBtn')) {
+      const btn = document.createElement('button');
+      btn.className = 'primary-btn';
+      btn.id = 'newGameBtn';
+      btn.style.marginTop = '14px';
+      btn.textContent = 'Start Another Game';
+      btn.onclick = () => {
+        delete document.getElementById('resultsList').dataset.built; // so the NEXT game's results screen animates fresh instead of staying stuck "already built"
+        socket.emit('new_game');
+      };
+      document.getElementById('resultsList').after(btn);
+    }
+
+    // Staggered reveal — ported from the proven design: rows fade in
+    // starting from LAST place, building suspense toward the winner
+    // being revealed last, then the New Game button after that.
+    const REVEAL_STAGGER_MS = 650;
+    const rows = [...document.querySelectorAll('.fr-row')];
+    const revealOrder = [...rows].reverse();
+    revealOrder.forEach((row, i) => {
+      setTimeout(() => row.classList.add('revealed'), i * REVEAL_STAGGER_MS);
+    });
+    setTimeout(() => {
+      const btn = document.getElementById('newGameBtn');
+      if (btn) btn.classList.add('revealed');
+    }, revealOrder.length * REVEAL_STAGGER_MS + 200);
   }
 
   renderResultsExtras(ranked);
@@ -1272,6 +1457,32 @@ function pipGridHtml(value) {
   const pos = PIP_POS[value] || [];
   const pips = pos.map(([r,c]) => `<span class="pip" style="grid-row:${r};grid-column:${c};"></span>`).join('');
   return `<span class="pipgrid">${pips}</span>`;
+}
+
+function miniDieHtml(value, solo) {
+  return `<span class="mini-die${solo?' solo':''}">${pipGridHtml(value)}</span>`;
+}
+function catGridHtml(rows) {
+  const rowsHtml = rows.map(row => `<span class="row">${row.map(v => miniDieHtml(v)).join('')}</span>`).join('');
+  return `<span class="cat-icon stack">${rowsHtml}</span>`;
+}
+function catIconHtml(key) {
+  switch(key) {
+    case 'ones': return `<span class="cat-icon">${miniDieHtml(1,true)}</span>`;
+    case 'twos': return `<span class="cat-icon">${miniDieHtml(2,true)}</span>`;
+    case 'threes': return `<span class="cat-icon">${miniDieHtml(3,true)}</span>`;
+    case 'fours': return `<span class="cat-icon">${miniDieHtml(4,true)}</span>`;
+    case 'fives': return `<span class="cat-icon">${miniDieHtml(5,true)}</span>`;
+    case 'sixes': return `<span class="cat-icon">${miniDieHtml(6,true)}</span>`;
+    case 'threeKind': return catGridHtml([[3,3,3]]);
+    case 'fourKind': return catGridHtml([[4,4],[4,4]]);
+    case 'fullHouse': return catGridHtml([[2,2],[3,3,3]]);
+    case 'smStraight': return catGridHtml([[1,2],[3,4]]);
+    case 'lgStraight': return catGridHtml([[2,3],[4,5,6]]);
+    case 'chance': return `<span class="cat-icon"><span class="chance-mark">?</span></span>`;
+    case 'yahtzee': return `<span class="cat-icon"><span class="trophy">🏆</span></span>`;
+    default: return '';
+  }
 }
 
 // The face-front shows the real value; the other 5 faces just need SOME
