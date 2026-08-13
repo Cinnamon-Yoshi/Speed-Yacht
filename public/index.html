@@ -17,7 +17,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Speed-Yacht">
 <style>
-  :root{ --bg:#0b3d2e; --gold:#d4af37; }
+  :root{ --bg:#0b3d2e; --gold:#d4af37; --die-size:56px; }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{
     margin:0; background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -40,14 +40,50 @@
   .timer-track{ flex:1; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
   .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear; }
 
-  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; }
-  .die{
-    width:56px; height:56px; background:#fff; border-radius:10px; position:relative;
-    cursor:pointer; flex:0 0 auto;
+  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; }
+
+  .die-container{
+    width:var(--die-size); height:var(--die-size); position:relative; flex:0 0 auto;
+    cursor:pointer; user-select:none; transform-style:preserve-3d;
   }
-  .die.held{ background:var(--gold); }
-  .die.held .pip{ background:#1a1200; }
-  .die.locked{ opacity:0.5; cursor:default; }
+  .die-container.locked{ opacity:0.5; cursor:default; }
+
+  .die-cube{ width:var(--die-size); height:var(--die-size); position:absolute; inset:0; transform-style:flat; }
+  .cube-face{
+    position:absolute; inset:0; width:var(--die-size); height:var(--die-size);
+    background:#fff; border-radius:10px; border:1px solid rgba(0,0,0,0.12);
+    box-shadow:inset 0 0 4px rgba(0,0,0,0.15); display:none;
+  }
+  .cube-face.face-front{ display:block; transform:none; }
+
+  .die-container.is-rolling .die-cube{ transform-style:preserve-3d; }
+  .die-container.is-rolling .cube-face{ display:block; backface-visibility:hidden; }
+  .die-container.is-rolling .face-front  { transform:rotateY(  0deg) translateZ(calc(var(--die-size) / 2)); }
+  .die-container.is-rolling .face-back   { transform:rotateY(180deg) translateZ(calc(var(--die-size) / 2)); }
+  .die-container.is-rolling .face-right  { transform:rotateY( 90deg) translateZ(calc(var(--die-size) / 2)); }
+  .die-container.is-rolling .face-left   { transform:rotateY(-90deg) translateZ(calc(var(--die-size) / 2)); }
+  .die-container.is-rolling .face-top    { transform:rotateX( 90deg) translateZ(calc(var(--die-size) / 2)); }
+  .die-container.is-rolling .face-bottom { transform:rotateX(-90deg) translateZ(calc(var(--die-size) / 2)); }
+
+  .die-container.held .cube-face{ background:var(--gold); }
+  .die-container.held .pip{ background:#1a1200; }
+
+  .die-container.rolling-1 .die-cube{ animation:cubeSpin1 0.75s infinite linear; }
+  .die-container.rolling-2 .die-cube{ animation:cubeSpin2 0.82s infinite linear; }
+  .die-container.rolling-3 .die-cube{ animation:cubeSpin3 0.68s infinite linear; }
+  @keyframes cubeSpin1{
+    0%   { transform:scale3d(0.88,0.88,0.88) rotateX(0deg)   rotateY(0deg)   rotateZ(0deg); }
+    100% { transform:scale3d(0.88,0.88,0.88) rotateX(720deg) rotateY(360deg) rotateZ(360deg); }
+  }
+  @keyframes cubeSpin2{
+    0%   { transform:scale3d(0.88,0.88,0.88) rotateX(0deg)    rotateY(0deg)   rotateZ(0deg); }
+    100% { transform:scale3d(0.88,0.88,0.88) rotateX(-360deg) rotateY(720deg) rotateZ(-360deg); }
+  }
+  @keyframes cubeSpin3{
+    0%   { transform:scale3d(0.88,0.88,0.88) rotateX(0deg)   rotateY(0deg)    rotateZ(0deg); }
+    100% { transform:scale3d(0.88,0.88,0.88) rotateX(720deg) rotateY(-720deg) rotateZ(360deg); }
+  }
+
   .pipgrid{ position:absolute; inset:14%; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
   .pip{ width:65%; height:65%; margin:auto; border-radius:50%; background:#111; justify-self:center; align-self:center; }
   .hold-lbl{ position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:3px; font-size:0.6em; font-weight:700; opacity:0.6; white-space:nowrap; }
@@ -418,7 +454,7 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.6';
+const APP_VERSION = '1.7';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
@@ -644,12 +680,64 @@ function previewScoreFor(key, dice, settings) {
 }
 
 let lastRoundRendered = null;
+
+// ── Roll tumble animation ────────────────────────────────────────────
+// The server is authoritative for dice values, but a roll that resolves
+// instantly (typical on a fast connection) feels flat with no visible
+// tumble at all. This plays a fixed-duration spin (matching the original
+// single-device prototype's ROLL_ANIM_MS) and only reveals the real
+// server-provided values once BOTH the timer has elapsed AND the
+// server's response has actually arrived — whichever finishes later —
+// so it never shows spinning without a roll in flight, and never shows
+// stale/guessed values.
+const ROLL_ANIM_MS = 750;
+let isRollingLocally = false;
+let rollAnimTimerFired = false;
+let rollServerDataReady = false;
+let rollsUsedBeforeThisRoll = 0;
+
+function requestRoll() {
+  if (isRollingLocally) return;
+  const st = latestState;
+  if (!st || !st.game) return;
+  const myG = st.game.players[myId];
+  if (!myG || myG.doneThisRound) return;
+  if (myG.rollsUsed >= st.settings.rollsPerTurn) return;
+
+  isRollingLocally = true;
+  rollAnimTimerFired = false;
+  rollServerDataReady = false;
+  rollsUsedBeforeThisRoll = myG.rollsUsed;
+  renderPlaying(st); // immediately show the spin, before the server even responds
+  socket.emit('roll_dice');
+  setTimeout(() => {
+    rollAnimTimerFired = true;
+    tryFinishRollAnim();
+  }, ROLL_ANIM_MS);
+}
+
+function tryFinishRollAnim() {
+  if (rollAnimTimerFired && rollServerDataReady) {
+    isRollingLocally = false;
+    if (latestState) renderPlaying(latestState);
+  }
+}
+
 function renderPlaying(state) {
   const g = state.game;
   document.getElementById('roundNum').textContent = `${g.round} of ${g.totalRounds}`;
 
   const myG = g.players[myId];
   if (!myG) return;
+
+  // A state_update arriving mid-roll-animation with an incremented
+  // rollsUsed is how we know the server has actually processed the roll
+  // we requested — separate from the fixed-duration spin timer above.
+  if (isRollingLocally && myG.rollsUsed > rollsUsedBeforeThisRoll) {
+    rollServerDataReady = true;
+    tryFinishRollAnim();
+    if (isRollingLocally) return; // still waiting on the animation timer — don't re-render with real values yet, the spin needs to keep playing
+  }
 
   // Timer (Full-30 mode only)
   const timerTrack = document.getElementById('timerTrack');
@@ -666,24 +754,26 @@ function renderPlaying(state) {
   const diceRow = document.getElementById('diceRow');
   diceRow.innerHTML = myG.dice.map((val, i) => {
     const held = myG.held[i];
-    const clickable = canInteract && myG.rollsUsed > 0;
-    return `<div class="die${held?' held':''}${clickable?'':' locked'}" data-i="${i}">
-      ${pipGridHtml(val)}
+    const clickable = canInteract && myG.rollsUsed > 0 && !isRollingLocally;
+    const spinning = isRollingLocally && !held;
+    const animClass = spinning ? ` is-rolling rolling-${(i%3)+1}` : '';
+    return `<div class="die-container${held?' held':''}${clickable?'':' locked'}${animClass}" data-i="${i}">
+      ${create3DCubeHtml(val)}
       ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
     </div>`;
   }).join('');
-  diceRow.querySelectorAll('.die').forEach(el => {
+  diceRow.querySelectorAll('.die-container').forEach(el => {
     el.onclick = () => {
-      if (!canInteract || myG.rollsUsed === 0) return;
+      if (!canInteract || myG.rollsUsed === 0 || isRollingLocally) return;
       socket.emit('toggle_hold', parseInt(el.dataset.i, 10));
     };
   });
 
   const rollsLeft = state.settings.rollsPerTurn - myG.rollsUsed;
   const rollBtn = document.getElementById('rollBtn');
-  rollBtn.disabled = !canInteract || rollsLeft <= 0;
-  rollBtn.textContent = canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round';
-  rollBtn.onclick = () => { if (canInteract && rollsLeft > 0) socket.emit('roll_dice'); };
+  rollBtn.disabled = !canInteract || rollsLeft <= 0 || isRollingLocally;
+  rollBtn.textContent = isRollingLocally ? 'Rolling…' : (canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round');
+  rollBtn.onclick = requestRoll;
 
   // OOPS/undo — visible only while there's actually something to undo:
   // I've committed a pick, AND the round hasn't ended yet (once it moves
@@ -694,6 +784,7 @@ function renderPlaying(state) {
   oopsBtn.onclick = () => { if (canUndo) socket.emit('undo_pick'); };
 
   document.getElementById('playStatus').textContent =
+    isRollingLocally ? '' :
     myG.doneThisRound ? "You're done this round — waiting on other players…" :
     (myG.rollsUsed === 0 ? 'Tap Roll to get started.' : 'Tap a die to hold it, or pick a category below.');
 
@@ -1020,6 +1111,21 @@ function pipGridHtml(value) {
   const pos = PIP_POS[value] || [];
   const pips = pos.map(([r,c]) => `<span class="pip" style="grid-row:${r};grid-column:${c};"></span>`).join('');
   return `<span class="pipgrid">${pips}</span>`;
+}
+
+// The face-front shows the real value; the other 5 faces just need SOME
+// pip pattern so the cube looks right while tumbling — which face lands
+// where doesn't matter since the spin obscures it, so fixed filler
+// values (matching the original single-device prototype) are fine.
+function create3DCubeHtml(targetVal) {
+  return `<div class="die-cube">
+    <div class="cube-face face-front">${pipGridHtml(targetVal || 1)}</div>
+    <div class="cube-face face-back">${pipGridHtml(6)}</div>
+    <div class="cube-face face-right">${pipGridHtml(3)}</div>
+    <div class="cube-face face-left">${pipGridHtml(4)}</div>
+    <div class="cube-face face-top">${pipGridHtml(2)}</div>
+    <div class="cube-face face-bottom">${pipGridHtml(5)}</div>
+  </div>`;
 }
 
 // Timer bar needs to keep ticking down smoothly between server broadcasts
