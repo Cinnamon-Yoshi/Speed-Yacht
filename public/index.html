@@ -75,6 +75,27 @@
   .sc-player-cell.scored{ color:var(--gold); }
   .sc-total-row{ margin-top:6px; border-top:1px solid rgba(212,175,55,0.3); padding-top:6px; }
   .sc-total-row .sc-cat-cell, .sc-total-row .sc-player-cell{ font-weight:900; background:none; }
+  .sc-bonus-row .sc-cat-cell, .sc-bonus-row .sc-player-cell{ font-style:italic; opacity:0.75; background:none; font-size:0.85em; }
+
+  .oops-btn{
+    width:100%; padding:10px; border:1px solid rgba(220,60,60,0.5); border-radius:10px;
+    background:rgba(220,60,60,0.1); color:#ff8c8c; font-weight:800; font-size:0.85em; cursor:pointer; margin-bottom:10px;
+  }
+
+  /* ===== Round Summary screen ===== */
+  .rs-row{
+    display:flex; align-items:center; gap:10px; padding:12px 14px;
+    background:rgba(255,255,255,0.05); border-radius:10px; margin-bottom:8px;
+  }
+  .rs-name{ flex:0 0 auto; font-weight:800; width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rs-took{ flex:1; font-size:0.85em; opacity:0.75; }
+  .rs-took .rs-cat-name{ color:#fff; font-weight:700; }
+  .rs-score{ font-weight:900; font-size:1.1em; color:var(--gold); }
+  .rs-bonus-badge{
+    font-size:0.65em; font-weight:800; color:var(--gold); background:rgba(212,175,55,0.15);
+    border:1px solid rgba(212,175,55,0.5); border-radius:8px; padding:2px 6px; margin-left:6px;
+  }
+  .rs-next-hint{ text-align:center; font-size:0.78em; opacity:0.5; margin-top:10px; font-style:italic; }
 
   /* ===== Results screen ===== */
   .fr-row{
@@ -319,9 +340,17 @@
 
     <div class="dice-row" id="diceRow"></div>
     <button class="primary-btn" id="rollBtn">Roll</button>
+    <button class="oops-btn" id="oopsBtn" style="display:none;">↩ OOPS — undo my pick</button>
     <div class="play-status" id="playStatus"></div>
 
     <div class="scoresheet" id="scoresheet"></div>
+  </div>
+
+  <!-- Round Summary -->
+  <div class="screen" id="screenRoundSummary">
+    <div class="h-sub">Scores this round</div>
+    <div id="roundSummaryList"></div>
+    <div class="rs-next-hint">Next round starting…</div>
   </div>
 
   <!-- Results -->
@@ -389,7 +418,7 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.5';
+const APP_VERSION = '1.6';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
@@ -550,6 +579,9 @@ socket.on('state_update', (state) => {
       if (state.game.gameOver) {
         showScreen('screenResults');
         renderResults(state);
+      } else if (state.game.roundPhase === 'summary') {
+        showScreen('screenRoundSummary');
+        renderRoundSummary(state);
       } else {
         showScreen('screenPlaying');
         renderPlaying(state);
@@ -653,6 +685,14 @@ function renderPlaying(state) {
   rollBtn.textContent = canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round';
   rollBtn.onclick = () => { if (canInteract && rollsLeft > 0) socket.emit('roll_dice'); };
 
+  // OOPS/undo — visible only while there's actually something to undo:
+  // I've committed a pick, AND the round hasn't ended yet (once it moves
+  // to the summary screen, the window's closed server-side too).
+  const oopsBtn = document.getElementById('oopsBtn');
+  const canUndo = myG.doneThisRound && g.roundPhase === 'playing';
+  oopsBtn.style.display = canUndo ? '' : 'none';
+  oopsBtn.onclick = () => { if (canUndo) socket.emit('undo_pick'); };
+
   document.getElementById('playStatus').textContent =
     myG.doneThisRound ? "You're done this round — waiting on other players…" :
     (myG.rollsUsed === 0 ? 'Tap Roll to get started.' : 'Tap a die to hold it, or pick a category below.');
@@ -691,10 +731,36 @@ function renderScoresheet(state) {
   }).join('');
   const totalRow = `<div class="sc-row sc-total-row"><div class="sc-cat-cell">Total</div>${totalCells}</div>`;
 
-  document.getElementById('scoresheet').innerHTML = header + rows + totalRow;
+  const bonusCells = players.map(p => {
+    const pg = g.players[p.id];
+    const count = pg ? (pg.yahtzeeBonusCount || 0) : 0;
+    const amount = count * state.settings.yahtzeeBonus;
+    return `<div class="sc-player-cell${count>0?' scored':''}">${count>0 ? '+'+amount : '—'}</div>`;
+  });
+  const bonusRow = `<div class="sc-row sc-bonus-row"><div class="sc-cat-cell">Yahtzee Bonus</div>${bonusCells.join('')}</div>`;
+
+  document.getElementById('scoresheet').innerHTML = header + rows + bonusRow + totalRow;
   document.querySelectorAll('.sc-player-cell.pickable').forEach(el => {
     el.onclick = () => socket.emit('pick_category', el.dataset.key);
   });
+}
+
+function renderRoundSummary(state) {
+  const g = state.game;
+  const summary = g.roundSummary || [];
+  document.getElementById('roundSummaryList').innerHTML = summary.map(entry => {
+    const took = entry.key
+      ? `took <span class="rs-cat-name">${CATEGORY_LABELS[entry.key] || entry.key}</span>`
+      : 'no score this round';
+    const bonusBadge = entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : '';
+    return `
+      <div class="rs-row">
+        <span class="rs-name">${entry.name}</span>
+        <span class="rs-took">${took}${bonusBadge}</span>
+        ${entry.key ? `<span class="rs-score">${entry.val}</span>` : ''}
+      </div>
+    `;
+  }).join('');
 }
 
 function renderResults(state) {
