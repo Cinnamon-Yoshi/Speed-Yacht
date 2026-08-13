@@ -104,6 +104,12 @@ function broadcastState() {
 // brief wifi drop, short enough that someone who's truly gone doesn't
 // block the room forever.
 const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 60000;
+// Much shorter grace period before the game has actually started — a
+// dropped Lobby/Edit/Accept connection has nothing at stake (no dice,
+// no scores to lose), so there's no good reason to let the room sit in
+// a non-'lobby' phase, invisibly blocking new joins with "Joining is
+// locked," for up to a full minute after everyone's actually left.
+const LOBBY_RECONNECT_GRACE_MS = parseInt(process.env.LOBBY_RECONNECT_GRACE_MS, 10) || 5000;
 
 function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
@@ -361,6 +367,25 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
+  // Emergency escape hatch — doesn't require having joined first, since
+  // the whole point is recovering a room that's stuck in a way that's
+  // blocking normal joining/reconnecting (e.g. a connection that never
+  // cleanly fired 'disconnect', leaving a phantom occupied seat). PIN-
+  // gated since it's destructive to whatever's currently in progress.
+  socket.on('reset_room', (pin) => {
+    if (pin !== HOST_PIN) {
+      socket.emit('reset_room_result', { success: false, message: 'Incorrect PIN.' });
+      return;
+    }
+    if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+    for (const p of state.players) {
+      if (p.disconnectTimer) clearTimeout(p.disconnectTimer);
+    }
+    state = freshState();
+    socket.emit('reset_room_result', { success: true });
+    broadcastState();
+  });
+
   // Host taps Admin → moves everyone from Lobby/Waiting Room into the
   // live-edit phase. Locks joining, per the confirmed flow.
   socket.on('host_start_editing', () => {
@@ -568,13 +593,14 @@ io.on('connection', (socket) => {
     // haven't come back by the time the grace period runs out.
     player.connected = false;
     broadcastState();
+    const graceMs = state.phase === 'playing' ? RECONNECT_GRACE_MS : LOBBY_RECONNECT_GRACE_MS;
     player.disconnectTimer = setTimeout(() => {
       // Re-check they're still the same disconnected entry before
       // removing — if they reconnected in the meantime, join_lobby
       // already cleared this timer and this callback is stale.
       const stillThere = state.players.find(p => p.id === socket.id && !p.connected);
       if (stillThere) removePlayer(socket.id);
-    }, RECONNECT_GRACE_MS);
+    }, graceMs);
   });
 });
 

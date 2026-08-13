@@ -82,6 +82,42 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.8 — join-mechanism fix + safety valve
+
+Prompted by a real report: "Joining is locked" showing up when no game
+had actually started.
+
+- **Root cause**: a disconnected player's seat stayed reserved for the
+  full 60s reconnect grace period regardless of whether a game was
+  actually in progress. If people were just testing the Lobby/Edit
+  screens and closed their tabs, the room stayed stuck outside the
+  `lobby` phase — invisibly blocking new joins — for up to a minute
+  after everyone had actually left. Worse, a connection that never
+  cleanly fires `disconnect` (phone sleeps, flaky network) could leave
+  a phantom seat blocking the room indefinitely.
+- **Fix**: the grace period is now phase-aware.
+  `LOBBY_RECONNECT_GRACE_MS` (5s default) applies before a game has
+  started — there's nothing at stake yet, so no reason to make a new
+  joiner wait. The full `RECONNECT_GRACE_MS` (60s) still applies once a
+  game is actually in progress, where losing your seat costs real
+  progress. Verified both paths independently, plus confirmed the
+  original bug scenario (someone testing the Edit screen, tab closed,
+  new person tries to join) now resolves in seconds instead of a
+  minute.
+- **Safety valve**: added a PIN-gated "Reset Room" option on the Lobby
+  screen, reachable without needing to join first (since the whole
+  point is recovering from a room you can't normally join into).
+  Immediately wipes state back to a fresh lobby regardless of current
+  phase.
+
+⚠️ **Known incomplete work included in this build**: drag-to-reorder
+dice was mid-implementation when the join-mechanism bug report came
+in. The core swap logic works (verified no dice get lost/duplicated,
+and tap-to-hold correctly follows the right die after reordering), but
+two issues are still open and NOT yet fixed: a `setPointerCapture`
+error during drag, and a drag gesture not always reaching the exact
+intended slot. Don't rely on it working smoothly yet.
+
 ## v1.7 — 3D dice tumble animation
 
 - Dice are real 3D CSS cubes now (6 faces, `preserve-3d`/`rotateX`/
