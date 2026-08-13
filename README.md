@@ -1,4 +1,4 @@
-# Roatan Yahtzee — Server (Phase 1–3)
+# Speed-Yacht — Server (Phase 1–3)
 
 Real-time multiplayer backend, mirroring the same stack and deployment
 pattern as Roatan Poker Club: Node.js + Express + Socket.io, deployed to
@@ -81,6 +81,36 @@ no ongoing cost beyond Render's free tier.
 - "Save Image" (download the scoreboard+photo as one shareable image
   to your camera roll) — noted in project memory as wanted, not yet
   built.
+
+## v1.9 — real visual polish pass
+
+Direct response to feedback that the server client's UI had drifted
+too far from the proven, tested single-device design — not another
+small patch, an actual port of specific proven details:
+
+- **Scoresheet**: rebuilt from loose gapped rows into one continuous
+  bordered card with thin row dividers, a darker header bar, fixed
+  44px row height, and a visually heavier Total row — matching the
+  proven ledger-style layout instead of the "floating pill" look it
+  had.
+- **OOPS/undo**: was a separate button sitting below Roll. In the
+  proven design it morphs the SAME roll button (red-tinted, same slot)
+  — ported that approach directly rather than the separate-element
+  version.
+- **Timer**: added the missing "running low" warning — the fill bar
+  now turns red in the last 5 seconds, matching the proven timer's
+  urgency cue. (The proven design's initial 3s fill-up buildup wasn't
+  ported — it was tied to an intro sequence this architecture doesn't
+  have an equivalent of.)
+- **Waiting Room player list**: reported as not showing until a 2nd
+  person joins. Tested this directly (single player joining alone,
+  checked at 50ms and 550ms) and could not reproduce it — the player's
+  own name showed up correctly and immediately both times. Given the
+  live site was confirmed running old branding (pre-v1.5), this was
+  most likely tested against a stale deploy rather than a bug in
+  current code — flagging honestly rather than claiming a fix for
+  something unverified. Worth re-testing once this version is
+  actually live.
 
 ## v1.8 — join-mechanism fix + safety valve
 

@@ -1,4 +1,4 @@
-// Roatan Yahtzee — multiplayer server
+// Speed-Yacht — multiplayer server
 // Phase 1: Lobby + Waiting Room only. Game state stays in memory for the
 // life of the process (same tradeoff poker already runs on) — no
 // database, no persistent disk, resets on redeploy/restart/spin-down.
@@ -605,5 +605,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Roatan Yahtzee server listening on port ${PORT}`);
+  console.log(`Speed-Yacht server listening on port ${PORT}`);
 });

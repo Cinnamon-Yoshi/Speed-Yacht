@@ -1,7 +1,7 @@
 {
-  "name": "roatan-yahtzee-server",
-  "version": "1.8.0",
-  "description": "Real-time multiplayer backend for Roatan Yahtzee",
+  "name": "speed-yacht-server",
+  "version": "1.9.0",
+  "description": "Real-time multiplayer backend for Speed-Yacht",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
