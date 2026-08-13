@@ -7,7 +7,7 @@ let nextPort = 3601;
 async function withFreshServer(testFn) {
   const port = nextPort++;
   const URL = `http://localhost:${port}`;
-  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150' } });
+  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150', ROUND_INTRO_MS: '150' } });
   server.stderr.on('data', d => process.stderr.write('[server ERR] ' + d));
   await new Promise((resolve) => {
     const onData = (d) => { if (d.toString().includes('listening')) { server.stdout.off('data', onData); resolve(); } };
@@ -161,7 +161,7 @@ async function main() {
       console.log(`  round ${i+1} (${cat}): upperBefore=${denverUpperBefore} upperAfter=${denverUpperAfter} expected=${expectedFlag} actual=${actualFlag} ${correct ? 'OK' : 'MISMATCH'}`);
       denverUpperBefore = denverUpperAfter;
 
-      await new Promise(r => setTimeout(r, 200)); // clear the rest of the summary pause before next round
+      await new Promise(r => setTimeout(r, 350)); // clear BOTH the summary AND intro phases before next round (80ms already elapsed + this ≥ 300ms combined phase time)
     }
     console.log('  ALL 6 ROUNDS MATCHED GROUND TRUTH:', allChecksCorrect);
     closeAll(sockets);

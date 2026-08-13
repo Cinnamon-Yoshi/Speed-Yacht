@@ -82,6 +82,31 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.14 — the "…and now Round X of 13" transition, and a re-verified timer
+
+- **Round transition is genuinely two phases**, not one — the proven
+  design shows "Scores played that round:" for `ROUND_SUMMARY_MS`
+  (5s default), THEN separately shows "…and now Round X of 13" for
+  `ROUND_INTRO_MS` (2s default, new env var) before gameplay resumes.
+  Only the first phase existed before; the second was missing entirely.
+  New `game.roundPhase` value `'intro'` added alongside `'summary'`.
+- Found and fixed a related discrepancy while implementing this: the
+  proven design skips the WHOLE transition after the final round —
+  jumps straight to Game Complete, no "and now Round 14" (which
+  wouldn't make sense). Verified directly that round 13 now does the
+  same.
+- **Timer**: re-verified directly with 4 real players in the actual
+  default (Full-30) mode — genuinely works (99%→89% fill over 3 real
+  seconds). Given this is the second explicit report of something that
+  tests as working in the current code, the deployed site is very
+  likely still behind — worth checking the version number shown in the
+  app header against what's actually live.
+- Retrofitted `ROUND_INTRO_MS` into all 6 test suites (same pattern as
+  `ROUND_SUMMARY_MS`/`RECONNECT_GRACE_MS`) — adding the second phase
+  broke every existing "play N rounds" test's timing assumptions since
+  each round transition now genuinely takes longer. Fixed and
+  confirmed all 6 pass.
+
 ## v1.13 — extended ground-truth verification to Round Summary and Results
 
 Continued the same approach as v1.12 proactively, before being asked —

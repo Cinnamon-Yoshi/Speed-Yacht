@@ -10,7 +10,7 @@ async function withFreshServer(testFn) {
   // Round summary pause defaults to 5s in production — way too slow to
   // sit through repeatedly in a test, so it's shortened here the same
   // way RECONNECT_GRACE_MS already is.
-  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150' } });
+  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150', ROUND_INTRO_MS: '150' } });
   server.stderr.on('data', d => process.stderr.write('[server ERR] ' + d));
   await new Promise((resolve, reject) => {
     const onData = (d) => { if (d.toString().includes('listening')) { server.stdout.off('data', onData); resolve(); } };
@@ -193,7 +193,7 @@ async function main() {
       const cat = CATEGORIES[round - 1];
       sockets.Denver.emit('pick_category', cat);
       sockets.Colton.emit('pick_category', cat);
-      await new Promise(r => setTimeout(r, 300)); // long enough to clear the 150ms test round-summary pause too
+      await new Promise(r => setTimeout(r, 500)); // long enough to clear BOTH 150ms test phases (summary + intro)
     }
     const st = getState();
     console.log('  gameOver:', st.game.gameOver, '(expect true)');

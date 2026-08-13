@@ -139,13 +139,14 @@ function freshPlayerGameState() {
 }
 
 const ROUND_SUMMARY_MS = parseInt(process.env.ROUND_SUMMARY_MS, 10) || 5000;
+const ROUND_INTRO_MS = parseInt(process.env.ROUND_INTRO_MS, 10) || 2000;
 
 function startGame() {
   state.game = {
     round: 1,
     gameOver: false,
     roundEndsAt: null,
-    roundPhase: 'playing', // 'playing' | 'summary'
+    roundPhase: 'playing', // 'playing' | 'summary' | 'intro'
     roundSummary: null,
     upperSumAtRoundStart: {}, // { [playerId]: number } — snapshot used to detect "crossed 63 THIS round" for the summary notation
     players: Object.fromEntries(state.players.map(p => [p.id, freshPlayerGameState()]))
@@ -181,11 +182,23 @@ function allPlayersDone() {
 
 // Round ends → pause here (undo is no longer possible once this starts)
 // showing what everyone took, including whether they crossed the 63
-// threshold THIS round specifically — then, after a beat, actually
-// advance to the next round (or wrap up the game on round 13).
+// threshold THIS round specifically. Matches the proven design: after
+// the FINAL round, this whole transition is skipped entirely — jump
+// straight to game over, no "scores played" pause and no "and now
+// Round 14" (which wouldn't make sense — there is no round 14).
 function beginRoundSummary() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
   if (!state.game || state.game.gameOver) return;
+
+  if (state.game.round >= TOTAL_ROUNDS) {
+    state.game.gameOver = true;
+    state.game.roundPhase = 'playing';
+    state.game.roundEndsAt = null;
+    recordGameLogEntry();
+    broadcastState();
+    return;
+  }
+
   state.game.roundPhase = 'summary';
   state.game.roundEndsAt = null;
   state.game.roundSummary = state.players.map(p => {
@@ -202,20 +215,25 @@ function beginRoundSummary() {
     };
   });
   broadcastState();
-  roundTimer = setTimeout(() => finishRoundSummary(), ROUND_SUMMARY_MS);
+  roundTimer = setTimeout(() => showRoundIntro(), ROUND_SUMMARY_MS);
+}
+
+// Second phase of the transition — "…and now Round X of 13" — replacing
+// the scores-played list rather than showing alongside it, matching the
+// proven two-phase sequence exactly. `round` itself doesn't increment
+// until this phase finishes, so mid-phase the client still needs to
+// compute round+1 for display.
+function showRoundIntro() {
+  if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  if (!state.game || state.game.gameOver) return;
+  state.game.roundPhase = 'intro';
+  broadcastState();
+  roundTimer = setTimeout(() => finishRoundSummary(), ROUND_INTRO_MS);
 }
 
 function finishRoundSummary() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
   if (!state.game || state.game.gameOver) return;
-  if (state.game.round >= TOTAL_ROUNDS) {
-    state.game.gameOver = true;
-    state.game.roundPhase = 'playing';
-    state.game.roundEndsAt = null;
-    recordGameLogEntry();
-    broadcastState();
-    return;
-  }
   state.game.round++;
   startRound();
 }

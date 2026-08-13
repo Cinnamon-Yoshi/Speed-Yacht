@@ -7,7 +7,7 @@ let nextPort = 3401;
 async function withFreshServer(testFn) {
   const port = nextPort++;
   const URL = `http://localhost:${port}`;
-  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150' } });
+  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150', ROUND_INTRO_MS: '150' } });
   server.stderr.on('data', d => process.stderr.write('[server ERR] ' + d));
   await new Promise((resolve) => {
     const onData = (d) => { if (d.toString().includes('listening')) { server.stdout.off('data', onData); resolve(); } };
@@ -61,7 +61,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 100));
       denver.emit('pick_category', CATEGORIES[round]);
       colton.emit('pick_category', CATEGORIES[round]);
-      await new Promise(r => setTimeout(r, 300)); // long enough to clear the 150ms test round-summary pause
+      await new Promise(r => setTimeout(r, 500)); // long enough to clear BOTH 150ms test phases (summary + intro)
     }
     await new Promise(r => setTimeout(r, 300));
 

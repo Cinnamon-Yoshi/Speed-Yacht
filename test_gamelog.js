@@ -11,7 +11,7 @@ async function withFreshServer(testFn, envOverrides) {
   // (5s in production is far too slow to sit through repeatedly) —
   // callers can still override it via envOverrides if a specific test
   // needs to.
-  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150', ...envOverrides } });
+  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150', ROUND_INTRO_MS: '150', ...envOverrides } });
   server.stderr.on('data', d => process.stderr.write('[server ERR] ' + d));
   await new Promise((resolve) => {
     const onData = (d) => { if (d.toString().includes('listening')) { server.stdout.off('data', onData); resolve(); } };
@@ -58,7 +58,7 @@ async function playFullGame(URL, names) {
     await new Promise(r => setTimeout(r, 100));
     const cat = CATEGORIES[round - 1];
     for (const name of names) sockets[name].emit('pick_category', cat);
-    await new Promise(r => setTimeout(r, 300)); // long enough to clear the 150ms test round-summary pause before the next round's roll_dice fires
+    await new Promise(r => setTimeout(r, 500)); // long enough to clear BOTH 150ms test phases (summary + intro) before the next round's roll_dice fires
   }
   await new Promise(r => setTimeout(r, 300));
 
