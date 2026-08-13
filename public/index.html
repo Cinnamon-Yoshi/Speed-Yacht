@@ -501,11 +501,17 @@
     <div class="scoresheet" id="scoresheet"></div>
   </div>
 
-  <!-- Round Summary -->
+  <!-- Round Summary — two sub-states: 'summary' shows the scores-played
+       list, 'intro' replaces it with "…and now Round X of 13", matching
+       the proven design's two-phase transition rather than one. -->
   <div class="screen" id="screenRoundSummary">
-    <div class="rs-title">Scores played that round:</div>
-    <div class="rs-list" id="roundSummaryList"></div>
-    <div class="rs-next-hint">Next round starting…</div>
+    <div id="rsSummaryState">
+      <div class="rs-title">Scores played that round:</div>
+      <div class="rs-list" id="roundSummaryList"></div>
+    </div>
+    <div id="rsIntroState" style="display:none;">
+      <div class="rs-title" id="rsIntroTitle">…and now Round 2 of 13</div>
+    </div>
   </div>
 
   <!-- Results -->
@@ -572,7 +578,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.13';
+const APP_VERSION = '1.14';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 
 const socket = io();
@@ -734,7 +740,7 @@ socket.on('state_update', (state) => {
       if (state.game.gameOver) {
         showScreen('screenResults');
         renderResults(state);
-      } else if (state.game.roundPhase === 'summary') {
+      } else if (state.game.roundPhase === 'summary' || state.game.roundPhase === 'intro') {
         showScreen('screenRoundSummary');
         renderRoundSummary(state);
       } else {
@@ -1129,6 +1135,19 @@ function renderScoresheet(state) {
 
 function renderRoundSummary(state) {
   const g = state.game;
+
+  if (g.roundPhase === 'intro') {
+    document.getElementById('rsSummaryState').style.display = 'none';
+    document.getElementById('rsIntroState').style.display = '';
+    // Server doesn't increment `round` until this phase finishes — the
+    // displayed number here is always "what's coming next", not the
+    // live authoritative round.
+    document.getElementById('rsIntroTitle').textContent = `…and now Round ${g.round + 1} of ${g.totalRounds}`;
+    return;
+  }
+
+  document.getElementById('rsSummaryState').style.display = '';
+  document.getElementById('rsIntroState').style.display = 'none';
   const summary = (g.roundSummary || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('roundSummaryList').innerHTML = summary.map(entry => {
     if (!entry.key) {
