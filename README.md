@@ -82,6 +82,23 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.7 — 3D dice tumble animation
+
+- Dice are real 3D CSS cubes now (6 faces, `preserve-3d`/`rotateX`/
+  `rotateY`), ported directly from the original single-device
+  prototype's proven implementation rather than rebuilt from scratch.
+- Tapping Roll plays a fixed 750ms tumble (`ROLL_ANIM_MS`, matching the
+  original) — but since dice values now come from the server, not
+  locally, the reveal is gated on BOTH the animation timer finishing
+  AND the server's response actually arriving, whichever comes later.
+  Never shows spinning without a real roll in flight, never shows
+  stale/guessed values.
+- Held dice correctly don't spin when the other dice re-roll.
+- Scoped to the player's own dice only this pass — the client doesn't
+  currently show opponents' live dice at all (only their scores), so
+  animating rolls you can't see wasn't in scope here. Worth a look as
+  its own feature if a "watch everyone roll" view is wanted later.
+
 ## v1.6 — feel/look improvements
 
 - **Round-summary pause**: instead of jumping straight to the next
