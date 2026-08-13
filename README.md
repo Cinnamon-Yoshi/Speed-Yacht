@@ -82,6 +82,27 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.6 — feel/look improvements
+
+- **Round-summary pause**: instead of jumping straight to the next
+  round, there's now a brief pause (`ROUND_SUMMARY_MS`, 5s by default)
+  showing what everyone took that round, including a "63 BONUS!" badge
+  for anyone who crossed the upper-section threshold on that specific
+  round's pick.
+- **OOPS/undo**: tapping a category can be undone right up until the
+  round ends — reverses the score (and the Yahtzee bonus, if that pick
+  triggered one) without touching dice, held state, or rolls used, so
+  you land right back where you were and can pick something else with
+  the same roll. Once the round moves to the summary pause, the window
+  closes — matches "disappears at the end of the timer."
+- **Yahtzee Bonus row**: now shown as its own line on the scoresheet
+  between the Yahtzee category and the Total, instead of only being
+  folded invisibly into the total.
+- Deliberately NOT done this pass: the 3D dice tumble animation and
+  drag-to-reorder dice. Each was a substantial standalone effort in the
+  original single-device build and is being picked up in a follow-up
+  rather than rushed alongside everything else here.
+
 ## v1.5 fixes
 
 - Rebranded from "Roatan Yahtzee" to "Speed-Yacht" throughout — page
@@ -122,6 +143,14 @@ no ongoing cost beyond Render's free tier.
 - `node test_description_flow.js` — verifies the host-entered
   description at Edit time flows through to the Game Log entry and
   resets cleanly for the next game.
+- `node test_oops_summary.js` — OOPS/undo (including that it correctly
+  leaves dice/held/rolls-used untouched, and that the window closes
+  once the round ends), and the round-summary "63 bonus this round"
+  flag verified against independently-computed ground truth.
+
+All of the above set `ROUND_SUMMARY_MS` and `RECONNECT_GRACE_MS` to
+short values via env vars when spawning the test server — production
+defaults (5s and 60s) are far too slow to sit through repeatedly.
 
 ## Deploying (mirrors poker's setup)
 

@@ -7,7 +7,10 @@ let nextPort = 3101; // unique port per test — sidesteps any port-release timi
 async function withFreshServer(testFn) {
   const port = nextPort++;
   const URL = `http://localhost:${port}`;
-  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port) } });
+  // Round summary pause defaults to 5s in production — way too slow to
+  // sit through repeatedly in a test, so it's shortened here the same
+  // way RECONNECT_GRACE_MS already is.
+  const server = spawn('node', ['server.js'], { cwd: __dirname, stdio: 'pipe', env: { ...process.env, PORT: String(port), ROUND_SUMMARY_MS: '150' } });
   server.stderr.on('data', d => process.stderr.write('[server ERR] ' + d));
   await new Promise((resolve, reject) => {
     const onData = (d) => { if (d.toString().includes('listening')) { server.stdout.off('data', onData); resolve(); } };
@@ -138,7 +141,7 @@ async function main() {
   });
 
   await withFreshServer(async (URL) => {
-    console.log('\n=== Test 6: When-Ready mode advances round the instant everyone is done ===');
+    console.log('\n=== Test 6: When-Ready mode moves to round-summary the instant everyone is done, then advances after the summary pause ===');
     const { sockets, infos, getState } = await setupGame(URL, ['Denver', 'Colton'], { roundAdvance: 'When-Ready' });
     sockets.Denver.emit('roll_dice');
     sockets.Colton.emit('roll_dice');
@@ -146,11 +149,19 @@ async function main() {
     sockets.Denver.emit('pick_category', 'chance');
     await new Promise(r => setTimeout(r, 150));
     console.log('  round after only one player done:', getState().game.round, '(expect still 1)');
+    console.log('  roundPhase after only one player done:', getState().game.roundPhase, '(expect playing)');
 
     sockets.Colton.emit('pick_category', 'chance');
-    await new Promise(r => setTimeout(r, 250));
+    await new Promise(r => setTimeout(r, 80)); // shorter than the 150ms test ROUND_SUMMARY_MS — should be mid-summary
+    const midSummary = getState();
+    console.log('  round still 1 during the summary pause:', midSummary.game.round, '(expect 1)');
+    console.log('  roundPhase during the pause:', midSummary.game.roundPhase, '(expect summary)');
+    console.log('  roundSummary has both players\' picks:', midSummary.game.roundSummary && midSummary.game.roundSummary.length === 2);
+
+    await new Promise(r => setTimeout(r, 250)); // let the summary pause finish
     const st = getState();
-    console.log('  round after BOTH done:', st.game.round, '(expect 2 — advanced immediately)');
+    console.log('  round after summary pause ends:', st.game.round, '(expect 2)');
+    console.log('  roundPhase back to playing:', st.game.roundPhase, '(expect playing)');
     console.log('  new round dice reset:', JSON.stringify(st.game.players[infos.Denver.id].dice) === JSON.stringify([1,1,1,1,1]));
     console.log('  new round doneThisRound reset:', st.game.players[infos.Denver.id].doneThisRound === false);
     console.log('  round 1 score preserved:', st.game.players[infos.Denver.id].scores.chance !== undefined);
@@ -182,7 +193,7 @@ async function main() {
       const cat = CATEGORIES[round - 1];
       sockets.Denver.emit('pick_category', cat);
       sockets.Colton.emit('pick_category', cat);
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 300)); // long enough to clear the 150ms test round-summary pause too
     }
     const st = getState();
     console.log('  gameOver:', st.game.gameOver, '(expect true)');

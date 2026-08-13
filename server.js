@@ -8,7 +8,7 @@ const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const { CATEGORIES, scoreFor, isYahtzeeRoll, grandTotal } = require('./scoring');
+const { CATEGORIES, scoreFor, isYahtzeeRoll, grandTotal, upperSum } = require('./scoring');
 
 const app = express();
 const server = http.createServer(app);
@@ -78,6 +78,8 @@ function publicState() {
       totalRounds: TOTAL_ROUNDS,
       roundEndsAt: state.game.roundEndsAt,
       gameOver: state.game.gameOver,
+      roundPhase: state.game.roundPhase,
+      roundSummary: state.game.roundSummary,
       players: Object.fromEntries(
         Object.entries(state.game.players).map(([pid, pg]) => [pid, {
           dice: pg.dice,
@@ -86,6 +88,7 @@ function publicState() {
           scores: pg.scores,
           yahtzeeBonusCount: pg.yahtzeeBonusCount,
           doneThisRound: pg.doneThisRound,
+          pickedThisRound: pg.pickedThisRound,
           total: grandTotal(pg.scores, pg.yahtzeeBonusCount, state.settings)
         }])
       )
@@ -124,15 +127,21 @@ function freshPlayerGameState() {
     rollsUsed: 0,
     scores: {},
     yahtzeeBonusCount: 0,
-    doneThisRound: false
+    doneThisRound: false,
+    pickedThisRound: null // { key, val, wasYahtzeeBonus } — set on pick, used by undo and the round-summary screen, cleared at the start of the next round
   };
 }
+
+const ROUND_SUMMARY_MS = parseInt(process.env.ROUND_SUMMARY_MS, 10) || 5000;
 
 function startGame() {
   state.game = {
     round: 1,
     gameOver: false,
     roundEndsAt: null,
+    roundPhase: 'playing', // 'playing' | 'summary'
+    roundSummary: null,
+    upperSumAtRoundStart: {}, // { [playerId]: number } — snapshot used to detect "crossed 63 THIS round" for the summary notation
     players: Object.fromEntries(state.players.map(p => [p.id, freshPlayerGameState()]))
   };
   startRound();
@@ -140,15 +149,19 @@ function startGame() {
 
 function startRound() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
-  for (const pg of Object.values(state.game.players)) {
+  for (const [pid, pg] of Object.entries(state.game.players)) {
     pg.dice = [1, 1, 1, 1, 1];
     pg.held = [false, false, false, false, false];
     pg.rollsUsed = 0;
     pg.doneThisRound = false;
+    pg.pickedThisRound = null;
+    state.game.upperSumAtRoundStart[pid] = upperSum(pg.scores);
   }
+  state.game.roundPhase = 'playing';
+  state.game.roundSummary = null;
   if (state.settings.roundAdvance === 'Full-30') {
     state.game.roundEndsAt = Date.now() + 30000;
-    roundTimer = setTimeout(() => advanceRound(), 30000);
+    roundTimer = setTimeout(() => beginRoundSummary(), 30000);
   } else {
     state.game.roundEndsAt = null;
   }
@@ -160,11 +173,38 @@ function allPlayersDone() {
   return ids.length > 0 && ids.every(id => state.game.players[id] && state.game.players[id].doneThisRound);
 }
 
-function advanceRound() {
+// Round ends → pause here (undo is no longer possible once this starts)
+// showing what everyone took, including whether they crossed the 63
+// threshold THIS round specifically — then, after a beat, actually
+// advance to the next round (or wrap up the game on round 13).
+function beginRoundSummary() {
+  if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  if (!state.game || state.game.gameOver) return;
+  state.game.roundPhase = 'summary';
+  state.game.roundEndsAt = null;
+  state.game.roundSummary = state.players.map(p => {
+    const pg = state.game.players[p.id];
+    const picked = pg && pg.pickedThisRound;
+    const hitBonusThisRound = !!(pg &&
+      state.game.upperSumAtRoundStart[p.id] < 63 &&
+      upperSum(pg.scores) >= 63);
+    return {
+      name: p.name,
+      key: picked ? picked.key : null,
+      val: picked ? picked.val : null,
+      hitBonusThisRound
+    };
+  });
+  broadcastState();
+  roundTimer = setTimeout(() => finishRoundSummary(), ROUND_SUMMARY_MS);
+}
+
+function finishRoundSummary() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
   if (!state.game || state.game.gameOver) return;
   if (state.game.round >= TOTAL_ROUNDS) {
     state.game.gameOver = true;
+    state.game.roundPhase = 'playing';
     state.game.roundEndsAt = null;
     recordGameLogEntry();
     broadcastState();
@@ -220,7 +260,7 @@ function maybeAdvanceWhenReady() {
   // two modes. "Full-30" always waits out the full 30s regardless of
   // whether everyone finished early, on purpose.
   if (state.settings.roundAdvance === 'When-Ready' && allPlayersDone()) {
-    advanceRound();
+    beginRoundSummary();
   }
 }
 
@@ -398,6 +438,7 @@ io.on('connection', (socket) => {
   // ── Gameplay ──────────────────────────────────────────────────────
   socket.on('roll_dice', () => {
     if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    if (state.game.roundPhase !== 'playing') return;
     const pg = state.game.players[socket.id];
     if (!pg || pg.doneThisRound) return;
     if (pg.rollsUsed >= state.settings.rollsPerTurn) return;
@@ -410,6 +451,7 @@ io.on('connection', (socket) => {
 
   socket.on('toggle_hold', (dieIndex) => {
     if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    if (state.game.roundPhase !== 'playing') return;
     const pg = state.game.players[socket.id];
     if (!pg || pg.doneThisRound) return;
     if (!Number.isInteger(dieIndex) || dieIndex < 0 || dieIndex > 4) return;
@@ -420,6 +462,7 @@ io.on('connection', (socket) => {
 
   socket.on('pick_category', (key) => {
     if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    if (state.game.roundPhase !== 'playing') return; // round's already ended, moved to summary
     const pg = state.game.players[socket.id];
     if (!pg || pg.doneThisRound) return;
     if (!CATEGORIES.includes(key)) return;
@@ -430,14 +473,42 @@ io.on('connection', (socket) => {
     // their first Yahtzee (a positive score already sitting in that
     // category) — award the bonus regardless of which category this
     // particular roll ultimately gets scored into.
-    if (isYahtzeeRoll(pg.dice) && pg.scores.yahtzee > 0) {
+    const wasYahtzeeBonus = isYahtzeeRoll(pg.dice) && pg.scores.yahtzee > 0;
+    if (wasYahtzeeBonus) {
       pg.yahtzeeBonusCount = (pg.yahtzeeBonusCount || 0) + 1;
     }
 
-    pg.scores[key] = scoreFor(key, pg.dice, state.settings);
+    const val = scoreFor(key, pg.dice, state.settings);
+    pg.scores[key] = val;
     pg.doneThisRound = true;
+    // Remembered specifically so undo_pick can cleanly reverse exactly
+    // this action — including the Yahtzee bonus, if this pick triggered
+    // one — without touching dice/held/rollsUsed, which undo is meant to
+    // leave alone.
+    pg.pickedThisRound = { key, val, wasYahtzeeBonus };
     broadcastState();
     maybeAdvanceWhenReady();
+  });
+
+  // OOPS/undo — protects against a genuine change of mind or an
+  // accidental tap (e.g. before rolls were even finished). Only valid
+  // while the round itself is still active: once the round has ended and
+  // moved to the summary pause, the window's closed, matching "disappears
+  // at the end of the timer." Deliberately does NOT touch held dice or
+  // rolls made — the player lands right back where they were before the
+  // pick, free to choose differently with the exact same roll.
+  socket.on('undo_pick', () => {
+    if (state.phase !== 'playing' || !state.game || state.game.gameOver) return;
+    if (state.game.roundPhase !== 'playing') return;
+    const pg = state.game.players[socket.id];
+    if (!pg || !pg.doneThisRound || !pg.pickedThisRound) return;
+    delete pg.scores[pg.pickedThisRound.key];
+    if (pg.pickedThisRound.wasYahtzeeBonus) {
+      pg.yahtzeeBonusCount = Math.max(0, (pg.yahtzeeBonusCount || 0) - 1);
+    }
+    pg.doneThisRound = false;
+    pg.pickedThisRound = null;
+    broadcastState();
   });
 
   // ── Game Log ────────────────────────────────────────────────────
