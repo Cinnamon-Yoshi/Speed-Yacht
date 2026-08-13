@@ -41,10 +41,15 @@
   .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear; }
 
   .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; }
+  .dice-slider{ position:relative; width:100%; max-width:340px; height:var(--die-size); margin:0 auto; }
 
   .die-container{
-    width:var(--die-size); height:var(--die-size); position:relative; flex:0 0 auto;
-    cursor:pointer; user-select:none; transform-style:preserve-3d;
+    width:var(--die-size); height:var(--die-size); position:absolute; top:0; left:0;
+    cursor:grab; user-select:none; touch-action:none; transform-style:preserve-3d;
+    transition:left 0.22s cubic-bezier(.25,.8,.35,1), transform 0.1s ease, box-shadow 0.1s ease;
+  }
+  .die-container.picked-up{
+    transition:none; transform:scale(1.06); box-shadow:0 4px 8px rgba(0,0,0,0.35); z-index:10; cursor:grabbing;
   }
   .die-container.locked{ opacity:0.5; cursor:default; }
 
@@ -225,6 +230,7 @@
     font-weight:700; font-size:0.9em; cursor:pointer; margin-top:10px;
   }
   .error-msg{ font-size:0.8em; color:#ff8c8c; text-align:center; margin-bottom:10px; min-height:1.2em; }
+  .error-msg.success{ color:#5fd38d; }
 
   .player-row{
     display:flex; justify-content:space-between; align-items:center; padding:10px 14px;
@@ -302,6 +308,16 @@
     <input class="lobby-input" id="nameInput" placeholder="Your name" maxlength="20">
     <button class="primary-btn" id="joinBtn">Join</button>
     <div class="gamelog-link" id="openGameLogFromLobby">📖 Game Log</div>
+    <div class="gamelog-link" id="openResetRoom" style="opacity:0.35;">⚠ Room stuck / can't join? Reset Room</div>
+    <div class="pin-box" id="resetPinBox" style="display:none;">
+      <div class="pin-label">Host PIN — this clears the current room for everyone</div>
+      <input type="password" inputmode="numeric" class="pin-input" id="resetPinInput" placeholder="••••" maxlength="8">
+      <div class="pin-error" id="resetPinError"></div>
+      <div class="pin-btn-row">
+        <button class="secondary-btn" id="resetPinCancelBtn">Cancel</button>
+        <button class="primary-btn" id="resetPinSubmitBtn">Reset Room</button>
+      </div>
+    </div>
   </div>
 
   <!-- Waiting Room -->
@@ -374,7 +390,7 @@
       <div class="app-version" id="appVersionPlaying" style="margin:0;flex:0 0 auto;"></div>
     </div>
 
-    <div class="dice-row" id="diceRow"></div>
+    <div class="dice-row"><div class="dice-slider" id="diceSlider"></div></div>
     <button class="primary-btn" id="rollBtn">Roll</button>
     <button class="oops-btn" id="oopsBtn" style="display:none;">↩ OOPS — undo my pick</button>
     <div class="play-status" id="playStatus"></div>
@@ -454,7 +470,7 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.8';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
@@ -483,7 +499,9 @@ document.getElementById('joinBtn').onclick = () => {
   socket.emit('join_lobby', name);
 };
 socket.on('join_error', (msg) => {
-  document.getElementById('lobbyError').textContent = msg;
+  const el = document.getElementById('lobbyError');
+  el.classList.remove('success');
+  el.textContent = msg;
 });
 socket.on('joined', ({ id, isHost }) => {
   myId = id;
@@ -696,6 +714,15 @@ let rollAnimTimerFired = false;
 let rollServerDataReady = false;
 let rollsUsedBeforeThisRoll = 0;
 
+// Drag-to-reorder is purely visual — die ORDER never affects scoring
+// (categories score off the set of values, not their positions), so
+// this stays entirely client-side. diceVisualOrder[visualSlot] = actual
+// die index — dragging swaps entries in THIS mapping, never the real
+// server-authoritative dice/held arrays, so no server round-trip is
+// needed for reordering at all.
+let diceVisualOrder = [0, 1, 2, 3, 4];
+let lastRoundForVisualOrder = null;
+
 function requestRoll() {
   if (isRollingLocally) return;
   const st = latestState;
@@ -749,24 +776,37 @@ function renderPlaying(state) {
     timerTrack.style.display = 'none';
   }
 
+  // Fresh round -> fresh visual order (a held die's position is
+  // meaningless once its value resets anyway).
+  if (g.round !== lastRoundForVisualOrder) {
+    diceVisualOrder = [0, 1, 2, 3, 4];
+    lastRoundForVisualOrder = g.round;
+  }
+
   // Dice
   const canInteract = !myG.doneThisRound;
-  const diceRow = document.getElementById('diceRow');
-  diceRow.innerHTML = myG.dice.map((val, i) => {
-    const held = myG.held[i];
+  const slider = document.getElementById('diceSlider');
+  const dieSizeNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--die-size')) || 56;
+  const sliderWidth = slider.getBoundingClientRect().width || (5*dieSizeNum);
+  const slotGap = Math.max(0, (sliderWidth - 5*dieSizeNum) / 4);
+  const step = dieSizeNum + slotGap;
+
+  slider.innerHTML = diceVisualOrder.map((actualIndex, slot) => {
+    const val = myG.dice[actualIndex];
+    const held = myG.held[actualIndex];
     const clickable = canInteract && myG.rollsUsed > 0 && !isRollingLocally;
     const spinning = isRollingLocally && !held;
-    const animClass = spinning ? ` is-rolling rolling-${(i%3)+1}` : '';
-    return `<div class="die-container${held?' held':''}${clickable?'':' locked'}${animClass}" data-i="${i}">
+    const animClass = spinning ? ` is-rolling rolling-${(actualIndex%3)+1}` : '';
+    return `<div class="die-container${held?' held':''}${clickable?'':' locked'}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
       ${create3DCubeHtml(val)}
       ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
     </div>`;
   }).join('');
-  diceRow.querySelectorAll('.die-container').forEach(el => {
-    el.onclick = () => {
-      if (!canInteract || myG.rollsUsed === 0 || isRollingLocally) return;
-      socket.emit('toggle_hold', parseInt(el.dataset.i, 10));
-    };
+
+  slider.querySelectorAll('.die-container').forEach(el => {
+    if (canInteract && myG.rollsUsed > 0 && !isRollingLocally) {
+      setupUnifiedDiePointer(el, step, dieSizeNum);
+    }
   });
 
   const rollsLeft = state.settings.rollsPerTurn - myG.rollsUsed;
@@ -789,6 +829,77 @@ function renderPlaying(state) {
     (myG.rollsUsed === 0 ? 'Tap Roll to get started.' : 'Tap a die to hold it, or pick a category below.');
 
   renderScoresheet(state);
+}
+
+// Geometry (die size + slot spacing) is captured ONCE at pointerdown and
+// reused for the whole gesture via `step`/`dieSizeNum`, rather than
+// re-derived on every pointermove — after any swap, DOM order no longer
+// matches slot order, so re-deriving mid-drag was reading non-adjacent
+// dice and computing garbage spacing (a real bug hit and fixed in the
+// original single-device prototype this was ported from).
+function setupUnifiedDiePointer(el, step, dieSizeNum) {
+  let startLeft = 0, startClientX = 0, dragSlot = 0, dragging = false;
+
+  el.addEventListener('pointerdown', (e) => {
+    dragSlot = parseInt(el.dataset.slot, 10);
+    startLeft = parseFloat(el.style.left) || 0;
+    startClientX = e.clientX;
+    dragging = true;
+    el.classList.add('picked-up');
+    el.setPointerCapture(e.pointerId);
+  });
+
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const maxLeft = 4 * step;
+    const newLeft = Math.min(maxLeft, Math.max(0, startLeft + (e.clientX - startClientX)));
+    el.style.left = newLeft + 'px';
+    const center = newLeft + dieSizeNum / 2;
+
+    const rightNeighbor = dragSlot + 1;
+    const leftNeighbor = dragSlot - 1;
+    if (rightNeighbor < 5) {
+      const neighborCenter = rightNeighbor * step + dieSizeNum / 2;
+      // >= (not strict >): when the dragged die is heading into the last
+      // slot, newLeft clamps to exactly maxLeft, making center exactly
+      // equal neighborCenter rather than ever exceeding it — a strict >
+      // can never fire there, silently breaking dragging into the last slot.
+      if (center >= neighborCenter) { swapSlots(dragSlot, rightNeighbor, el, step); dragSlot = rightNeighbor; }
+    }
+    if (leftNeighbor >= 0) {
+      const neighborCenter = leftNeighbor * step + dieSizeNum / 2;
+      if (center <= neighborCenter) { swapSlots(dragSlot, leftNeighbor, el, step); dragSlot = leftNeighbor; }
+    }
+  });
+
+  const handlePointerUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove('picked-up');
+    el.style.left = (dragSlot * step) + 'px'; // eases in via the base transition
+    el.dataset.slot = dragSlot;
+    if (!el.__didSwap) {
+      const actualIndex = parseInt(el.dataset.actualIndex, 10);
+      socket.emit('toggle_hold', actualIndex);
+    }
+    el.__didSwap = false;
+  };
+
+  el.addEventListener('pointerup', handlePointerUp);
+  el.addEventListener('pointercancel', handlePointerUp);
+}
+
+function swapSlots(a, b, draggedEl, step) {
+  [diceVisualOrder[a], diceVisualOrder[b]] = [diceVisualOrder[b], diceVisualOrder[a]];
+
+  const slider = document.getElementById('diceSlider');
+  const neighborEl = [...slider.querySelectorAll('.die-container')].find(d => d !== draggedEl && parseInt(d.dataset.slot, 10) === b);
+  if (neighborEl) {
+    neighborEl.dataset.slot = a;
+    neighborEl.style.left = (a * step) + 'px';
+  }
+  draggedEl.dataset.slot = b;
+  draggedEl.__didSwap = true;
 }
 
 function renderScoresheet(state) {
@@ -979,6 +1090,27 @@ document.getElementById('openGameLogFromLobby').onclick = () => {
   showScreen('screenGameLog');
   renderGameLog();
 };
+document.getElementById('openResetRoom').onclick = () => {
+  document.getElementById('resetPinBox').style.display = '';
+  document.getElementById('resetPinError').textContent = '';
+  document.getElementById('resetPinInput').value = '';
+};
+document.getElementById('resetPinCancelBtn').onclick = () => {
+  document.getElementById('resetPinBox').style.display = 'none';
+};
+document.getElementById('resetPinSubmitBtn').onclick = () => {
+  socket.emit('reset_room', document.getElementById('resetPinInput').value);
+};
+socket.on('reset_room_result', ({ success, message }) => {
+  if (success) {
+    document.getElementById('resetPinBox').style.display = 'none';
+    const el = document.getElementById('lobbyError');
+    el.classList.add('success');
+    el.textContent = 'Room reset. You can join now.';
+  } else {
+    document.getElementById('resetPinError').textContent = message || 'Incorrect PIN.';
+  }
+});
 document.getElementById('viewGameLogBtn').onclick = () => {
   glReturnScreen = 'screenResults';
   showScreen('screenGameLog');
