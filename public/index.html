@@ -38,7 +38,8 @@
   .round-lbl{ font-size:0.62em; font-weight:700; opacity:0.6; text-transform:uppercase; }
   .round-num{ font-weight:900; color:var(--gold); font-size:1em; }
   .timer-track{ flex:1; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
-  .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear; }
+  .timer-fill{ height:100%; background:var(--gold); width:100%; transition:width 1s linear, background-color 1s linear; }
+  .timer-fill.low{ background:#e01010; }
 
   .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; }
   .dice-slider{ position:relative; width:100%; max-width:340px; height:var(--die-size); margin:0 auto; }
@@ -95,32 +96,54 @@
 
   .play-status{ text-align:center; font-size:0.78em; opacity:0.65; margin:8px 0 14px; min-height:1.2em; }
 
-  .scoresheet{ display:flex; flex-direction:column; gap:4px; }
-  .sc-header{ display:flex; gap:4px; font-size:0.68em; font-weight:800; opacity:0.6; padding:0 2px 4px; }
-  .sc-header .sc-name-col{ flex:1.4; }
+  /* Scoresheet — ported from the proven single-device design rather
+     than the looser "floating rounded rows" version this had before:
+     one continuous bordered card with thin row dividers (like an actual
+     ledger), a distinct darker header bar, fixed row height, and a
+     visually heavier Total row — not individually gapped pill rows. */
+  .scoresheet{
+    border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden;
+  }
+  .sc-header{
+    display:flex; background:#123a2c; height:38px; align-items:center;
+    font-size:0.66em; font-weight:800; opacity:0.7; padding:0 10px 0 0;
+  }
+  .sc-header .sc-name-col{ flex:1.5; }
   .sc-header .sc-player-col{ flex:1; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sc-row{ display:flex; gap:4px; align-items:stretch; }
+  .sc-row{
+    display:flex; align-items:stretch; height:44px;
+    border-bottom:1px solid rgba(255,255,255,0.08);
+  }
+  .sc-row:last-child{ border-bottom:none; }
   .sc-cat-cell{
-    flex:1.4; background:rgba(255,255,255,0.05); border-radius:6px; padding:6px 8px;
-    font-size:0.75em; font-weight:700; display:flex; align-items:center;
+    flex:1.5; padding:0 0 0 10px; font-size:0.76em; font-weight:600; opacity:0.9;
+    display:flex; align-items:center;
   }
   .sc-player-cell{
-    flex:1; background:rgba(255,255,255,0.05); border-radius:6px; padding:6px 4px;
-    font-size:0.8em; font-weight:800; text-align:center; display:flex; align-items:center; justify-content:center;
-    color:#fff;
+    flex:1; font-size:0.85em; font-weight:400; text-align:center;
+    display:flex; align-items:center; justify-content:center; color:#fff;
   }
   .sc-player-cell.mine.pickable{
-    background:rgba(212,175,55,0.15); border:1px solid rgba(212,175,55,0.5); cursor:pointer; color:var(--gold);
+    background:rgba(212,175,55,0.12); border-top:1px solid rgba(212,175,55,0.4); border-bottom:1px solid rgba(212,175,55,0.4);
+    cursor:pointer; color:var(--gold); font-weight:800;
   }
-  .sc-player-cell.mine.pickable.zero{ opacity:0.45; }
-  .sc-player-cell.scored{ color:var(--gold); }
-  .sc-total-row{ margin-top:6px; border-top:1px solid rgba(212,175,55,0.3); padding-top:6px; }
-  .sc-total-row .sc-cat-cell, .sc-total-row .sc-player-cell{ font-weight:900; background:none; }
-  .sc-bonus-row .sc-cat-cell, .sc-bonus-row .sc-player-cell{ font-style:italic; opacity:0.75; background:none; font-size:0.85em; }
+  .sc-player-cell.mine.pickable.zero{ opacity:0.4; }
+  .sc-player-cell.scored{ color:#fff; font-weight:400; }
+  .sc-total-row{
+    height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none;
+  }
+  .sc-total-row .sc-cat-cell{ font-weight:800; opacity:1; font-size:0.85em; }
+  .sc-total-row .sc-player-cell{ font-weight:800; font-size:1.05em; color:#fff; }
+  .sc-bonus-row{ height:36px; }
+  .sc-bonus-row .sc-cat-cell{ font-style:italic; opacity:0.65; font-size:0.68em; justify-content:center; padding-left:0; text-align:center; }
+  .sc-bonus-row .sc-player-cell{ font-style:italic; opacity:0.65; font-size:0.75em; }
 
-  .oops-btn{
-    width:100%; padding:10px; border:1px solid rgba(220,60,60,0.5); border-radius:10px;
-    background:rgba(220,60,60,0.1); color:#ff8c8c; font-weight:800; font-size:0.85em; cursor:pointer; margin-bottom:10px;
+  /* OOPS/undo morphs the SAME roll button rather than sitting as a
+     separate element — ported from the proven single-device design
+     (.roll-die-btn.oops-mode there), which deliberately shares the
+     button's slot instead of adding a new one below it. */
+  .primary-btn.oops-mode{
+    background:#2c1212; color:#e74c3c; border:1px solid #e74c3c;
   }
 
   /* ===== Round Summary screen ===== */
@@ -392,7 +415,6 @@
 
     <div class="dice-row"><div class="dice-slider" id="diceSlider"></div></div>
     <button class="primary-btn" id="rollBtn">Roll</button>
-    <button class="oops-btn" id="oopsBtn" style="display:none;">↩ OOPS — undo my pick</button>
     <div class="play-status" id="playStatus"></div>
 
     <div class="scoresheet" id="scoresheet"></div>
@@ -470,7 +492,7 @@
 // Lobby/home screen here; ALSO needs to render on the scorecard screen
 // once Phase 3 (real gameplay) exists — that screen doesn't exist yet,
 // so it isn't there yet either. Don't forget it when building Phase 3.
-const APP_VERSION = '1.8';
+const APP_VERSION = '1.9';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 document.getElementById('appVersionPlaying').textContent = 'v' + APP_VERSION;
 
@@ -771,7 +793,9 @@ function renderPlaying(state) {
   if (g.roundEndsAt) {
     timerTrack.style.display = '';
     const msLeft = Math.max(0, g.roundEndsAt - Date.now());
-    document.getElementById('timerFill').style.width = Math.round((msLeft/30000)*100) + '%';
+    const fillEl = document.getElementById('timerFill');
+    fillEl.style.width = Math.round((msLeft/30000)*100) + '%';
+    fillEl.classList.toggle('low', msLeft <= 5000);
   } else {
     timerTrack.style.display = 'none';
   }
@@ -811,17 +835,22 @@ function renderPlaying(state) {
 
   const rollsLeft = state.settings.rollsPerTurn - myG.rollsUsed;
   const rollBtn = document.getElementById('rollBtn');
-  rollBtn.disabled = !canInteract || rollsLeft <= 0 || isRollingLocally;
-  rollBtn.textContent = isRollingLocally ? 'Rolling…' : (canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round');
-  rollBtn.onclick = requestRoll;
-
-  // OOPS/undo — visible only while there's actually something to undo:
-  // I've committed a pick, AND the round hasn't ended yet (once it moves
-  // to the summary screen, the window's closed server-side too).
-  const oopsBtn = document.getElementById('oopsBtn');
+  // OOPS/undo morphs this same button rather than adding a separate one —
+  // visible only while there's actually something to undo: I've committed
+  // a pick, AND the round hasn't ended yet (once it moves to the summary
+  // screen, the window's closed server-side too).
   const canUndo = myG.doneThisRound && g.roundPhase === 'playing';
-  oopsBtn.style.display = canUndo ? '' : 'none';
-  oopsBtn.onclick = () => { if (canUndo) socket.emit('undo_pick'); };
+  if (canUndo) {
+    rollBtn.classList.add('oops-mode');
+    rollBtn.disabled = false;
+    rollBtn.textContent = '↩ OOPS — Undo My Pick';
+    rollBtn.onclick = () => socket.emit('undo_pick');
+  } else {
+    rollBtn.classList.remove('oops-mode');
+    rollBtn.disabled = !canInteract || rollsLeft <= 0 || isRollingLocally;
+    rollBtn.textContent = isRollingLocally ? 'Rolling…' : (canInteract ? `Roll (${Math.max(0,rollsLeft)} left)` : 'Done this round');
+    rollBtn.onclick = requestRoll;
+  }
 
   document.getElementById('playStatus').textContent =
     isRollingLocally ? '' :
@@ -1268,7 +1297,10 @@ setInterval(() => {
   if (latestState && latestState.phase === 'playing' && latestState.game && !latestState.game.gameOver && latestState.game.roundEndsAt) {
     const msLeft = Math.max(0, latestState.game.roundEndsAt - Date.now());
     const fill = document.getElementById('timerFill');
-    if (fill) fill.style.width = Math.round((msLeft/30000)*100) + '%';
+    if (fill) {
+      fill.style.width = Math.round((msLeft/30000)*100) + '%';
+      fill.classList.toggle('low', msLeft <= 5000);
+    }
   }
 }, 500);
 </script>
