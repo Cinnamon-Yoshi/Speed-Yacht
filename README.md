@@ -82,6 +82,112 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.13 — extended ground-truth verification to Round Summary and Results
+
+Continued the same approach as v1.12 proactively, before being asked —
+screenshotted the actual proven Round Summary and Final Results screens
+directly from `v3.8.html` (had to work around the bots' real 10-20s
+randomized commit delay and the 5s round-summary pause to capture them
+at all — see `ground_truth2.js`'s approach if resurrecting it) and
+compared side-by-side.
+
+- **Round Summary**: was a loosely-styled approximation. Rebuilt to the
+  exact proven structure — the grid-based "Name | took | value | for |
+  category icon" row layout, players sorted alphabetically, the exact
+  "Scores played that round:" title. Worth noting: the "63 BONUS!"
+  badge is a genuine addition beyond the proven design, not a
+  restoration — it was only ever a documented backlog wish, never
+  actually implemented there.
+- **Results screen**: was missing the winner's trophy icon entirely,
+  and the satisfying staggered reveal (rows fade in from last place up
+  to the winner, building suspense, before the button appears). Both
+  ported directly. Verified the "New Game" flow correctly resets the
+  reveal so a second game's results screen animates fresh instead of
+  silently skipping the animation the second time.
+- Full regression suite re-run after both changes — all 6 suites
+  passing.
+
+## v1.12 — rebuilt against actual ground truth, not code-reading
+
+This pass was done differently on purpose: instead of reading CSS/JS
+and re-deriving values by hand (the process that produced several
+rounds of "you missed something"), the actual proven `v3.8.html` was
+run directly in headless Chrome and screenshotted as ground truth,
+then compared side-by-side against this client repeatedly until they
+matched.
+
+- **Duplicate version number**: was showing on both the title screen
+  and the Playing screen. Now one shared header (title left, version
+  right) used by every screen, matching the proven layout exactly —
+  one instance, not two.
+- **Round indicator position**: was oddly placed next to the dice/
+  timer. The proven design puts it inline with the player-names header
+  row of the scoresheet — rebuilt to match.
+- **Timer**: rebuilt as its own full-width row in the correct position
+  (was correctly implemented but positioned wrong, which combined with
+  a previous demo happening to use When-Ready mode made it look
+  broken/missing).
+- **Scoresheet architecture**: replaced the flexbox approximation with
+  the actual CSS Grid system the proven version uses — real
+  `--cat-col-width`/`--player-col-width`/`--player-count` custom
+  properties, not fixed/guessed pixel values. The current player's
+  pickable cell now spans icon+score as one merged, gold-outlined
+  unit, matching `.cat-player-merged`/`.thin-outline`, not just a
+  highlighted number.
+- **4-player support**: tested with all 4 real players for the first
+  time (previous testing only ever used 2) — caught a real overflow
+  bug where my originally-guessed column widths (150px/75px) were
+  significantly wider than the proven design's actual formula
+  (`die-size*2+9` / `die-size`), causing the 4th column to run off the
+  right edge. Fixed by deriving column widths from `--die-size` via
+  `calc()` instead of hardcoding them.
+- Row height corrected to 50px (was 44px) and the Total row's text
+  size corrected to match (was noticeably smaller than the proven
+  1.5em label / 1.1em numbers).
+- Full regression suite (6 test files) plus a new real-browser
+  end-to-end test re-run after these changes, since this touched
+  enough shared structure (header IDs, the whole scoresheet render
+  function, the timer element) that regressions were a real risk —
+  all passing.
+
+## v1.11 — roll button restructure + timer clarification
+
+- **Roll button**: was a full-width bar below the dice. Ported the
+  actual proven structure — a square button sized exactly like a die,
+  sitting as the first element inline with the dice row, not below it.
+  Also matched the proven counting semantic: shows which roll you're
+  about to make (1, 2, 3…), not a countdown of rolls remaining.
+  OOPS/undo morphs this same button (red border/background, "OOPS" /
+  "UNDO" two-line label) rather than a separate element, matching the
+  original `.roll-die-btn.oops-mode`.
+- **Timer**: verified directly — it was never actually broken. A
+  prior screenshot happened to be taken in When-Ready mode, where the
+  timer is correctly hidden (there's no fixed countdown in that mode).
+  Tested the actual default (Full-30) directly: the bar is present and
+  genuinely ticking down in real time.
+
+## v1.10 — category icon system + 63-bonus progress row
+
+Direct follow-up after seeing real screenshots of the proven scoresheet
+— the v1.9 pass fixed row structure/borders but completely missed that
+categories were never text labels in the first place, they were
+pictorial dice icons. Actually ported this time, not just described:
+
+- **Category icons**: each row now shows the real icon — a mini die
+  face for Ones-Sixes, three dice for 3-of-a-Kind, a 2×2 grid for
+  4-of-a-Kind, mixed grids for Full House/straights, "?" for Chance,
+  🏆 for Yahtzee — pulled directly from the proven `catIconHtml()`/
+  `miniDieHtml()`/`catGridHtml()` functions rather than reinvented.
+- **63-bonus progress row**: added the live "(need N)" countdown row
+  after Sixes that was missing entirely before (only a flat Yahtzee
+  Bonus row existed). Three states, all verified against real
+  gameplay: still in progress shows how many points still needed,
+  already qualified shows the actual bonus amount, finished the upper
+  section without qualifying shows a dimmed dash.
+- Round-summary screen still uses text labels, not icons — that
+  wasn't in the screenshots flagged, so left as-is for now rather than
+  assumed.
+
 ## v1.9 — real visual polish pass
 
 Direct response to feedback that the server client's UI had drifted
