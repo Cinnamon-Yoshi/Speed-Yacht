@@ -125,6 +125,96 @@ function removePlayer(playerId) {
 
 // ── Gameplay engine ──────────────────────────────────────────────────
 let roundTimer = null;
+let botTimers = [];
+function clearBotTimers() {
+  botTimers.forEach(t => clearTimeout(t));
+  botTimers = [];
+}
+const BOT_COMMIT_MIN_MS = parseInt(process.env.BOT_COMMIT_MIN_MS, 10) || 10000;
+const BOT_COMMIT_MAX_MS = parseInt(process.env.BOT_COMMIT_MAX_MS, 10) || 20000;
+
+// Bots run their own autonomous roll/hold/pick sequence per round, timed
+// independently of any human — a real architectural difference from the
+// proven single-device design, where one shared Roll button drove every
+// player's dice in lockstep. That doesn't translate to this server,
+// where each player (bot or human) rolls on their own independent
+// timeline. The DECISION heuristics are ported directly (hold pairs+,
+// 30% chance to stop early instead of always using every roll, prefer
+// the highest-scoring open category with an upper-section fallback when
+// everything's a zero) — only the "how/when it acts" mechanics differ.
+function runBotRound(botId) {
+  const roundStartTime = Date.now();
+  const commitAt = BOT_COMMIT_MIN_MS + Math.random() * (BOT_COMMIT_MAX_MS - BOT_COMMIT_MIN_MS);
+
+  function commitBest() {
+    const pg = state.game.players[botId];
+    if (!pg || pg.doneThisRound) return;
+    const open = CATEGORIES.filter(k => !Object.prototype.hasOwnProperty.call(pg.scores, k));
+    if (open.length === 0) return;
+    let bestKey = open[0], bestVal = -1;
+    open.forEach(k => {
+      const v = scoreFor(k, pg.dice, state.settings);
+      if (v > bestVal) { bestVal = v; bestKey = k; }
+    });
+    if (bestVal === 0) {
+      const upperCats = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'];
+      const upperOpen = open.filter(k => upperCats.includes(k));
+      if (upperOpen.length) bestKey = upperOpen[0];
+    }
+
+    const waitMore = Math.max(0, commitAt - (Date.now() - roundStartTime));
+    const t = setTimeout(() => {
+      if (!state.game || state.game.gameOver || state.game.roundPhase !== 'playing') return;
+      const pg2 = state.game.players[botId];
+      if (!pg2 || pg2.doneThisRound) return;
+      const wasYahtzeeBonus = isYahtzeeRoll(pg2.dice) && pg2.scores.yahtzee > 0;
+      if (wasYahtzeeBonus) pg2.yahtzeeBonusCount = (pg2.yahtzeeBonusCount || 0) + 1;
+      pg2.scores[bestKey] = scoreFor(bestKey, pg2.dice, state.settings);
+      pg2.doneThisRound = true;
+      pg2.pickedThisRound = { key: bestKey, val: pg2.scores[bestKey], wasYahtzeeBonus };
+      broadcastState();
+      maybeAdvanceWhenReady();
+    }, waitMore);
+    botTimers.push(t);
+  }
+
+  function rollThenDecide() {
+    if (!state.game || state.game.gameOver || state.game.roundPhase !== 'playing') return;
+    const pg = state.game.players[botId];
+    if (!pg || pg.doneThisRound || pg.rollsUsed >= state.settings.rollsPerTurn) return;
+
+    for (let i = 0; i < 5; i++) {
+      if (!pg.held[i]) pg.dice[i] = 1 + Math.floor(Math.random() * 6);
+    }
+    pg.rollsUsed++;
+    broadcastState();
+
+    const t = setTimeout(() => {
+      if (!state.game || state.game.gameOver || state.game.roundPhase !== 'playing') return;
+      const pg2 = state.game.players[botId];
+      if (!pg2 || pg2.doneThisRound) return;
+
+      if (pg2.rollsUsed < state.settings.rollsPerTurn) {
+        const counts = {};
+        pg2.dice.forEach(v => counts[v] = (counts[v] || 0) + 1);
+        for (let i = 0; i < 5; i++) pg2.held[i] = counts[pg2.dice[i]] >= 2;
+        broadcastState();
+        if (Math.random() >= 0.7) {
+          commitBest();
+        } else {
+          const t2 = setTimeout(rollThenDecide, 500 + Math.random() * 600);
+          botTimers.push(t2);
+        }
+      } else {
+        commitBest();
+      }
+    }, 500 + Math.random() * 600);
+    botTimers.push(t);
+  }
+
+  const t0 = setTimeout(rollThenDecide, 400 + Math.random() * 400);
+  botTimers.push(t0);
+}
 
 function freshPlayerGameState() {
   return {
@@ -142,6 +232,32 @@ const ROUND_SUMMARY_MS = parseInt(process.env.ROUND_SUMMARY_MS, 10) || 5000;
 const ROUND_INTRO_MS = parseInt(process.env.ROUND_INTRO_MS, 10) || 2000;
 
 function startGame() {
+  // Fill empty seats with bots, up to 4 total, if the host enabled it.
+  // Bots are just players from the data model's POV — same shape in
+  // state.players and state.game.players as a real human — so every
+  // existing render/scoring path (scoresheet, header bar, results,
+  // Game Log) already works for them unchanged. isBot marks which ones
+  // are server-controlled rather than socket-controlled, and bot ids
+  // are prefixed to guarantee they can never collide with a real
+  // socket.id.
+  // Bots are mid-implementation and not yet properly tested end-to-end
+  // (caught a real regression from this exact code interfering with
+  // other already-working tests) — gated behind an explicit env var so
+  // the WIP code stays in place without affecting default behavior
+  // until it's actually finished and verified.
+  if (state.settings.fillWithBots && process.env.ENABLE_BOTS === 'true') {
+    const BOT_NAMES = ['Bot Alex', 'Bot Sally', 'Bot Colton', 'Bot Robin'];
+    let botIndex = 0;
+    while (state.players.length < 4) {
+      const usedNames = new Set(state.players.map(p => p.name));
+      let name = BOT_NAMES[botIndex % BOT_NAMES.length];
+      let suffix = 1;
+      while (usedNames.has(name)) { suffix++; name = `${BOT_NAMES[botIndex % BOT_NAMES.length]} ${suffix}`; }
+      state.players.push({ id: `bot-${botIndex}`, name, connected: true, isBot: true, disconnectTimer: null });
+      botIndex++;
+    }
+  }
+
   state.game = {
     round: 1,
     gameOver: false,
@@ -156,6 +272,7 @@ function startGame() {
 
 function startRound() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  clearBotTimers();
   for (const [pid, pg] of Object.entries(state.game.players)) {
     pg.dice = [1, 1, 1, 1, 1];
     pg.held = [false, false, false, false, false];
@@ -171,6 +288,9 @@ function startRound() {
     roundTimer = setTimeout(() => beginRoundSummary(), 30000);
   } else {
     state.game.roundEndsAt = null;
+  }
+  for (const p of state.players) {
+    if (p.isBot) runBotRound(p.id);
   }
   broadcastState();
 }
@@ -188,6 +308,7 @@ function allPlayersDone() {
 // Round 14" (which wouldn't make sense — there is no round 14).
 function beginRoundSummary() {
   if (roundTimer) { clearTimeout(roundTimer); roundTimer = null; }
+  clearBotTimers();
   if (!state.game || state.game.gameOver) return;
 
   if (state.game.round >= TOTAL_ROUNDS) {

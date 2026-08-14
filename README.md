@@ -82,6 +82,43 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.15 — frozen header/footer layout, timer buildup, and a caught regression
+
+Denver shared the actual `v3.8.html` source directly (not just a
+screenshot) — reading the real CSS/JS surfaced three genuine gaps code-
+reading alone had missed:
+
+- **Frozen header, scrollable middle, sticky footer**: the proven
+  design keeps dice/roll-button/round-and-player-header/timer all
+  permanently visible at the top, with ONLY the category rows
+  scrolling underneath, and the Total row stuck to the bottom of that
+  scrollable area. My Playing screen let everything scroll together —
+  meaning the dice and roll button would disappear off-screen once you
+  scrolled down to later categories. Rebuilt to match, scoped
+  specifically to the Playing screen via a JS-toggled class (not
+  applied globally, since the other screens rely on normal page
+  scrolling and were never built for this). Verified directly: the
+  dice stayed at the exact same screen position before and after
+  scrolling the scoresheet 300px.
+- **Timer is a two-phase animation, not just a countdown**: fills
+  0%→100% over a 3s "buildup" first, then drains back down over the
+  real 30s. Only the drain existed before.
+- **Timer fill is right-anchored** (`justify-content:flex-end` on the
+  track), not left-anchored — it erodes from the left side while
+  staying pinned to the right, not the more typical direction. Ported
+  directly.
+- **Caught a real regression while testing this**: the in-progress,
+  not-yet-finished bot code (mid-implementation from earlier this
+  session) was auto-adding bots by default whenever `fillWithBots` was
+  true — which broke several already-working, previously-passing
+  tests that assumed exactly 2 players. Gated the bot-adding behind an
+  explicit `ENABLE_BOTS` env var so the work-in-progress code doesn't
+  affect default behavior until it's actually finished and properly
+  tested end-to-end — bots remain a genuinely open item, not
+  something silently half-shipped.
+- Full regression suite (6 files) re-run after all of the above — all
+  passing.
+
 ## v1.14 — the "…and now Round X of 13" transition, and a re-verified timer
 
 - **Round transition is genuinely two phases**, not one — the proven
