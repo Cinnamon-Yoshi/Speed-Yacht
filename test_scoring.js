@@ -24,7 +24,7 @@ check('fourKind qualifies via 5oak too', scoreFor('fourKind', [5,5,5,5,5], setti
 check('proper full house (3+2)', scoreFor('fullHouse', [2,2,2,6,6], settings), 25);
 check('not a full house (3+1+1)', scoreFor('fullHouse', [2,2,2,6,4], settings), 0);
 check('not a full house (2+2+1)', scoreFor('fullHouse', [2,2,6,6,4], settings), 0);
-check('5oak counts as full house (house rule)', scoreFor('fullHouse', [3,3,3,3,3], settings), 25);
+check('5oak alone (no joker context) does NOT count as full house', scoreFor('fullHouse', [3,3,3,3,3], settings), 0);
 
 // Straights
 check('small straight 1-2-3-4', scoreFor('smStraight', [1,2,3,4,6], settings), 30);
@@ -61,6 +61,51 @@ check('grandTotal with 2x yahtzee bonus adds 200', withYahtzeeBonus, expectedTot
 
 const belowThreshold = { ones:1, twos:2, threes:3, fours:4, fives:5, sixes:6 }; // upper=21, no bonus
 check('grandTotal below 63 threshold gets no bonus', grandTotal(belowThreshold, 0, settings), 21);
+
+// ── Yahtzee Joker Rule ──────────────────────────────────────────────
+// Official rule: once a player's FIRST Yahtzee is banked, a SUBSEQUENT
+// Yahtzee roll can be used as a joker. This only actually changes
+// anything once the matching upper-section slot is already filled —
+// at that point Full House/Sm Straight/Lg Straight become scoreable at
+// their full fixed values despite not literally being those patterns.
+const rollSecondYahtzee = [4,4,4,4,4];
+
+// No joker context at all (existingScores omitted) — plain scoring,
+// no special treatment. This is also what a brand new player's very
+// FIRST Yahtzee roll looks like, before anything is banked.
+check('fullHouse with no existingScores context: no joker', scoreFor('fullHouse', rollSecondYahtzee, settings), 0);
+check('smStraight with no existingScores context: no joker', scoreFor('smStraight', rollSecondYahtzee, settings), 0);
+
+// First Yahtzee not yet banked (still 0/undefined) — a raw 5oak still
+// isn't a joker yet, even if this IS technically their first Yahtzee
+// roll of the game.
+check('fullHouse before first Yahtzee is banked: no joker', scoreFor('fullHouse', rollSecondYahtzee, settings, { yahtzee: 0 }), 0);
+
+// First Yahtzee IS banked, matching upper slot (fours, since rolled
+// all 4s) is STILL OPEN — only that exact upper slot gets boosted
+// (face×5, which for a genuine 5oak equals normal count×face anyway).
+// Full House should NOT be joker-scoreable yet — matching upper slot
+// must be filled first.
+const bankedFirstYahtzee = { yahtzee: settings.firstYahtzee };
+check('matching upper slot (fours) open: fours gets the boosted value', scoreFor('fours', rollSecondYahtzee, settings, bankedFirstYahtzee), 20);
+check('matching upper slot open: fullHouse is NOT joker-scoreable yet', scoreFor('fullHouse', rollSecondYahtzee, settings, bankedFirstYahtzee), 0);
+check('matching upper slot open: smStraight is NOT joker-scoreable yet', scoreFor('smStraight', rollSecondYahtzee, settings, bankedFirstYahtzee), 0);
+
+// First Yahtzee banked AND the matching upper slot (fours) is ALREADY
+// filled — NOW Full House/Sm Straight/Lg Straight unlock as jokers.
+const upperSlotFilled = { yahtzee: settings.firstYahtzee, fours: 16 };
+check('matching upper slot filled: fullHouse joker unlocks (25)', scoreFor('fullHouse', rollSecondYahtzee, settings, upperSlotFilled), 25);
+check('matching upper slot filled: smStraight joker unlocks (30)', scoreFor('smStraight', rollSecondYahtzee, settings, upperSlotFilled), 30);
+check('matching upper slot filled: lgStraight joker unlocks (40)', scoreFor('lgStraight', rollSecondYahtzee, settings, upperSlotFilled), 40);
+
+// Joker rule should NEVER touch the 'yahtzee' category itself (that's
+// always just the plain first/subsequent yahtzee check), and threeKind/
+// fourKind/chance already correctly score a 5oak via their own normal
+// pattern-matching (sum of all 5 dice qualifies for both), so the
+// joker branch correctly doesn't need to special-case them either.
+check('yahtzee category itself is never affected by the joker branch', scoreFor('yahtzee', rollSecondYahtzee, settings, upperSlotFilled), settings.firstYahtzee);
+check('threeKind still scores normally (unaffected by joker branch)', scoreFor('threeKind', rollSecondYahtzee, settings, upperSlotFilled), 20);
+check('chance still scores normally (unaffected by joker branch)', scoreFor('chance', rollSecondYahtzee, settings, upperSlotFilled), 20);
 
 console.log(`\n${failures === 0 ? 'ALL PASSED' : failures + ' FAILURE(S)'}`);
 process.exit(failures === 0 ? 0 : 1);

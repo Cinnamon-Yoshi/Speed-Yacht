@@ -82,6 +82,102 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.17 — seven specific reported bugs, all fixed and verified
+
+- **Total row wasn't sticky** — `.scoresheet` had `overflow:hidden`,
+  and since it's the direct parent of the sticky total row, that
+  silently broke `position:sticky` entirely. Fixed by making the
+  Playing-screen-scoped override explicitly `overflow:visible`.
+- **Bots showing up** — the toggle's HTML was hardcoded to
+  `class="toggle on"` regardless of the actual (deliberately disabled)
+  feature state, and `fillWithBots` defaulted to `true` server-side.
+  Fixed both defaults to off. The bot-adding code itself can only ever
+  run through one explicitly `ENABLE_BOTS`-gated path server-side.
+- **Columns misaligned under dice 3/4/5/6** — confirmed real: the dice
+  used an independently-computed gap based on the slider's own
+  rendered width, completely disconnected from the scoresheet grid's
+  fixed `--gap`. Rewired both to derive from the same `--gap` variable
+  instead. Verified programmatically (dice and column centers spaced
+  identically, 63px apart) and visually via screenshot.
+- **Too much border on the sides** — same root cause as the alignment
+  issue; fixed alongside it. Also increased `--gap` from 4px to 7px
+  for more breathing room, as requested.
+- **"Tap Roll to get started" line** — confirmed neither this nor its
+  sibling status line exist anywhere in the proven reference. Removed
+  the entire status element, not just the one line.
+- **Timer not starting at round begin, waiting for the first roll
+  instead** — the real bug, found via actual debug logging rather than
+  further guessing: the buildup animation depended on a double-
+  `requestAnimationFrame` callback to force a layout flush, and that
+  callback simply never fired, leaving the fill stuck at 0% until
+  something else (like a roll) happened to trigger a fresh render.
+  Replaced with a synchronous reflow (`void fillEl.offsetWidth`) that
+  doesn't depend on the browser scheduling a paint frame. Verified
+  with real screenshots at 1s/2s/3s showing genuine progression before
+  any roll — a plain inline-style check turned out to be an unreliable
+  way to confirm this given how headless rendering handles CSS
+  transitions.
+- **Score font not staying bold gold for the round it was picked** —
+  confirmed real: every scored cell got the same plain white styling
+  regardless of when it was picked; the "this round's pick gets
+  emphasized" distinction from the proven design didn't exist in the
+  code at all. Restored it using the `pickedThisRound` data the server
+  already tracks. Verified end-to-end across two browser sessions: the
+  cell shows bold gold to other players right after picking, and
+  correctly reverts to plain white once the next round begins (not
+  immediately after committing within the same round).
+
+Full regression suite (6 files) re-run after all seven fixes — all
+passing.
+
+## v1.16 — a genuine scoring rule bug, resolved drag-to-reorder, haptics, and settings-field widths
+
+You asked directly whether everything good in the reference file had
+actually been matched — rather than assert yes, went through it
+function-by-function against the current server build. Found real
+things:
+
+- **Scoring bug, not cosmetic**: the proven design implements the
+  official Yahtzee "Joker Rule" — once a player's first Yahtzee is
+  banked, a second Yahtzee can be used as a joker for Full House/Sm
+  Straight/Lg Straight, but ONLY once the upper-section slot matching
+  the rolled face is already filled. My `scoring.js` never implemented
+  this at all — worse, it had a different, simpler shortcut baked in
+  (any 5-of-a-kind always counted as Full House, unconditionally, with
+  no joker gating), which doesn't match the proven rule and gives
+  incorrect scores in this scenario. Rewrote `scoreFor()` to match the
+  real rule exactly, updated all 3 server call sites and the client's
+  preview copy to pass the player's current scores through, and added
+  10 dedicated unit tests covering every branch of the rule (open
+  upper slot vs. filled, before vs. after banking the first Yahtzee,
+  confirming unrelated categories like Chance/3oak stay unaffected).
+  One pre-existing test had literally encoded the old wrong behavior
+  as its expected result — fixed that too.
+- **Drag-to-reorder dice — turns out this already works.** Re-tested
+  directly rather than assuming: the pointer-capture error and
+  short-landing bug from earlier in the project are both gone, most
+  likely as a side effect of the later sticky-layout restructuring.
+  Verified with a real drag simulation landing in the correct final
+  slot with no errors.
+- **Haptic feedback was entirely missing.** The proven design fires a
+  short vibration on every meaningful interaction — rolling, holding a
+  die, picking a category, undo, and each swap during a drag. Ported
+  `triggerHaptic()` and wired it into the same set of interaction
+  points.
+- **Settings field widths were inconsistent** — dropdowns and number
+  inputs had different hardcoded widths (108px vs 70px) side by side
+  on the Edit screen. Ported the dynamic width-measurement approach
+  that sizes every field to match the widest dropdown option, so they
+  read as one consistent column.
+- Confirmed `handicap` (referenced in the proven design's timeout
+  handling) is dead/unused code even in the reference itself — hardcoded
+  false everywhere, no UI ever sets it true — so this isn't something
+  I was missing; my existing "unfinished players get skipped, not
+  scored" behavior on a Full-30 timeout already matches the real
+  (non-dormant) behavior.
+- Full regression suite (6 files, plus the 10 new scoring tests) run
+  after all of the above — all passing.
+
 ## v1.15 — frozen header/footer layout, timer buildup, and a caught regression
 
 Denver shared the actual `v3.8.html` source directly (not just a

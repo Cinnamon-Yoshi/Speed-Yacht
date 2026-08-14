@@ -51,7 +51,7 @@ function freshState() {
       upperBonus: 35,
       firstYahtzee: 50,
       yahtzeeBonus: 100,
-      fillWithBots: true,
+      fillWithBots: false,
       description: ''      // entered by host on the Edit screen, consumed into the Game Log entry once the game ends, then cleared for the next game
     },
     accepted: {},        // { [playerId]: true }
@@ -68,7 +68,7 @@ function publicState() {
   // gameLog is deliberately NOT included here — see broadcastGameLog()
   // below for why.
   return {
-    players: state.players.map(p => ({ id: p.id, name: p.name, connected: p.connected })),
+    players: state.players.map(p => ({ id: p.id, name: p.name, connected: p.connected, isBot: !!p.isBot })),
     hostId: state.hostId,
     phase: state.phase,
     settings: state.settings,
@@ -153,7 +153,7 @@ function runBotRound(botId) {
     if (open.length === 0) return;
     let bestKey = open[0], bestVal = -1;
     open.forEach(k => {
-      const v = scoreFor(k, pg.dice, state.settings);
+      const v = scoreFor(k, pg.dice, state.settings, pg.scores);
       if (v > bestVal) { bestVal = v; bestKey = k; }
     });
     if (bestVal === 0) {
@@ -169,7 +169,7 @@ function runBotRound(botId) {
       if (!pg2 || pg2.doneThisRound) return;
       const wasYahtzeeBonus = isYahtzeeRoll(pg2.dice) && pg2.scores.yahtzee > 0;
       if (wasYahtzeeBonus) pg2.yahtzeeBonusCount = (pg2.yahtzeeBonusCount || 0) + 1;
-      pg2.scores[bestKey] = scoreFor(bestKey, pg2.dice, state.settings);
+      pg2.scores[bestKey] = scoreFor(bestKey, pg2.dice, state.settings, pg2.scores);
       pg2.doneThisRound = true;
       pg2.pickedThisRound = { key: bestKey, val: pg2.scores[bestKey], wasYahtzeeBonus };
       broadcastState();
@@ -593,6 +593,12 @@ io.on('connection', (socket) => {
   socket.on('new_game', () => {
     if (!isHost(socket.id)) return;
     if (!state.game || !state.game.gameOver) return;
+    // Remove any bots from the previous game — they'd otherwise persist
+    // as stale "Waiting" entries on the Accept screen that can NEVER
+    // actually accept (no real socket to emit that event), permanently
+    // blocking the next game from starting. startGame() re-adds however
+    // many bots are actually needed once the real players confirm+accept.
+    state.players = state.players.filter(p => !p.isBot);
     state.game = null;
     state.phase = 'editing';
     state.accepted = {};
@@ -642,7 +648,7 @@ io.on('connection', (socket) => {
       pg.yahtzeeBonusCount = (pg.yahtzeeBonusCount || 0) + 1;
     }
 
-    const val = scoreFor(key, pg.dice, state.settings);
+    const val = scoreFor(key, pg.dice, state.settings, pg.scores);
     pg.scores[key] = val;
     pg.doneThisRound = true;
     // Remembered specifically so undo_pick can cleanly reverse exactly

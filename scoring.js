@@ -35,9 +35,33 @@ function hasStraight(dice, length) {
   return length <= 1;
 }
 
-function scoreFor(key, dice, settings) {
+function scoreFor(key, dice, settings, existingScores) {
   const counts = diceCounts(dice);
   const countValues = Object.values(counts);
+  const upperKeys = ['ones', 'twos', 'threes', 'fours', 'fives', 'sixes'];
+
+  // Yahtzee "Joker Rule" — once a player's FIRST Yahtzee is already
+  // banked, a SUBSEQUENT Yahtzee roll can be used as a joker: if the
+  // upper-section slot matching the rolled face is still open, ONLY
+  // that slot gets the boosted value (face×5 — which for a genuine
+  // 5-of-a-kind equals the normal count×face value anyway, so this
+  // doesn't actually change anything by itself). The real effect is
+  // once that matching upper slot is ALREADY filled: Full House/Sm
+  // Straight/Lg Straight become available at their full fixed values
+  // (25/30/40) even though a 5-of-a-kind roll doesn't literally form
+  // those patterns — this is what actually differs from naive scoring.
+  if (existingScores && key !== 'yahtzee' && isYahtzeeRoll(dice) && existingScores['yahtzee'] === (settings.firstYahtzee || 50)) {
+    const matchedFace = dice[0];
+    const upperKeyForFace = upperKeys[matchedFace - 1];
+    if (existingScores[upperKeyForFace] == null) {
+      if (key === upperKeyForFace) return matchedFace * 5;
+    } else {
+      if (key === 'fullHouse') return 25;
+      if (key === 'smStraight') return 30;
+      if (key === 'lgStraight') return 40;
+    }
+  }
+
   switch (key) {
     case 'ones': return (counts[1] || 0) * 1;
     case 'twos': return (counts[2] || 0) * 2;
@@ -50,8 +74,7 @@ function scoreFor(key, dice, settings) {
     case 'fullHouse': {
       const sorted = countValues.slice().sort();
       const isProperFullHouse = sorted.length === 2 && sorted[0] === 2 && sorted[1] === 3;
-      const isFiveOfAKind = countValues.some(c => c === 5); // common house rule: 5oak also counts
-      return (isProperFullHouse || isFiveOfAKind) ? 25 : 0;
+      return isProperFullHouse ? 25 : 0;
     }
     case 'smStraight': return hasStraight(dice, 4) ? 30 : 0;
     case 'lgStraight': return hasStraight(dice, 5) ? 40 : 0;
