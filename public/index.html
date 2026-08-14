@@ -54,7 +54,7 @@
   .hb-cell{ text-align:center; font-weight:800; font-size:0.85em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   .timer-row{ margin:0 0 10px; }
-  .timer-track{ width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; }
+  .timer-track{ width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; display:flex; justify-content:flex-end; }
   .timer-fill{ height:100%; width:100%; background:var(--gold); border-radius:4px; transition:width 1s linear, background-color 1s linear; }
   .timer-fill.low{ background:#e01010; }
 
@@ -188,6 +188,9 @@
   .sc-total-row{
     height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none; border-radius:8px; margin-top:4px;
   }
+  #screenPlaying .sc-total-row{
+    position:sticky; bottom:0; z-index:5; border-radius:0; margin-top:0;
+  }
   .sc-total-row .sc-cat-cell{ font-weight:800; opacity:1; font-size:1.5em; }
   .sc-total-row .sc-player-cell{ font-weight:800; font-size:1.1em; color:#fff; }
   .sc-bonus-row{ height:36px; }
@@ -316,6 +319,28 @@
 
   .screen{ display:none; }
   .screen.active{ display:block; }
+
+  /* Playing screen specifically gets a frozen-header / scrollable-middle
+     / sticky-footer layout, ported from the proven design — dice, round/
+     player header bar, and timer all stay pinned and visible while only
+     the category rows scroll underneath. Scoped to just this screen via
+     a JS-toggled class on .phone (not applied globally), so the other
+     screens keep their normal natural-flow page scrolling, which they
+     were built around and which changing globally would have broken. */
+  .phone.playing-mode{
+    height:calc(100dvh - 32px); max-height:840px; overflow:hidden;
+    display:flex; flex-direction:column;
+  }
+  #screenPlaying.active{
+    display:flex; flex-direction:column; height:100%; min-height:0;
+  }
+  #screenPlaying .sticky-top{ flex-shrink:0; }
+  #screenPlaying .scoresheet-container{
+    flex:1; min-height:0; overflow-y:auto;
+    border-radius:0 0 14px 14px; border:1px solid rgba(255,255,255,0.1); border-top:none;
+    position:relative;
+  }
+  #screenPlaying .scoresheet{ border:none; border-radius:0; }
 
   .lobby-input{
     width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
@@ -487,18 +512,22 @@
 
   <!-- Playing -->
   <div class="screen" id="screenPlaying">
-    <div class="dice-row">
-      <button class="roll-die-btn" id="rollBtn"><span class="rl-label">ROLL</span><span class="rl-num-single">1</span></button>
-      <div class="dice-slider" id="diceSlider"></div>
+    <div class="sticky-top">
+      <div class="dice-row">
+        <button class="roll-die-btn" id="rollBtn"><span class="rl-label">ROLL</span><span class="rl-num-single">1</span></button>
+        <div class="dice-slider" id="diceSlider"></div>
+      </div>
+
+      <div class="grid-row header-bar" id="headerBar"></div>
+      <div class="timer-row" id="timerRow" style="display:none;">
+        <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+      </div>
+      <div class="play-status" id="playStatus"></div>
     </div>
 
-    <div class="grid-row header-bar" id="headerBar"></div>
-    <div class="timer-row" id="timerRow" style="display:none;">
-      <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+    <div class="scoresheet-container">
+      <div class="scoresheet" id="scoresheet"></div>
     </div>
-    <div class="play-status" id="playStatus"></div>
-
-    <div class="scoresheet" id="scoresheet"></div>
   </div>
 
   <!-- Round Summary — two sub-states: 'summary' shows the scores-played
@@ -578,7 +607,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.14';
+const APP_VERSION = '1.15';
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 
 const socket = io();
@@ -590,6 +619,9 @@ let latestState = null;
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  // Playing screen gets the frozen-header/scrollable-scoresheet layout;
+  // every other screen keeps normal natural-flow page scrolling.
+  document.querySelector('.phone').classList.toggle('playing-mode', id === 'screenPlaying');
 }
 
 socket.on('connect', () => {
@@ -829,6 +861,8 @@ let rollsUsedBeforeThisRoll = 0;
 // needed for reordering at all.
 let diceVisualOrder = [0, 1, 2, 3, 4];
 let lastRoundForVisualOrder = null;
+let lastTimerRoundEndsAt = null;
+let timerBuildupStartedAt = null;
 
 function requestRoll() {
   if (isRollingLocally) return;
@@ -896,15 +930,44 @@ function renderPlaying(state) {
     if (isRollingLocally) return; // still waiting on the animation timer — don't re-render with real values yet, the spin needs to keep playing
   }
 
-  // Timer (Full-30 mode only)
+  // Timer (Full-30 mode only) — two-phase animation ported from the
+  // proven design: a 3s "buildup" filling 0%→100% when a round's timer
+  // window first appears, THEN the real countdown drains it back down.
+  // lastTimerRoundEndsAt distinguishes a genuinely NEW timer window
+  // (play the buildup once) from a redundant re-render of the SAME
+  // window (just keep draining normally, don't replay the buildup).
   const timerRow = document.getElementById('timerRow');
   if (g.roundEndsAt) {
     timerRow.style.display = '';
-    const msLeft = Math.max(0, g.roundEndsAt - Date.now());
     const fillEl = document.getElementById('timerFill');
-    fillEl.style.width = Math.round((msLeft/30000)*100) + '%';
-    fillEl.classList.toggle('low', msLeft <= 5000);
+    if (g.roundEndsAt !== lastTimerRoundEndsAt) {
+      lastTimerRoundEndsAt = g.roundEndsAt;
+      timerBuildupStartedAt = Date.now();
+      fillEl.style.transition = 'none';
+      fillEl.style.width = '0%';
+      fillEl.classList.remove('low');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          fillEl.style.transition = 'width 3s linear, background-color 1s linear';
+          fillEl.style.width = '100%';
+        });
+      });
+      const onBuildupDone = (e) => {
+        if (e.propertyName !== 'width') return;
+        fillEl.removeEventListener('transitionend', onBuildupDone);
+        fillEl.style.transition = 'width 1s linear, background-color 1s linear';
+        const msLeftNow = Math.max(0, g.roundEndsAt - Date.now());
+        fillEl.style.width = Math.round((msLeftNow/30000)*100) + '%';
+        fillEl.classList.toggle('low', msLeftNow <= 5000);
+      };
+      fillEl.addEventListener('transitionend', onBuildupDone);
+    } else {
+      const msLeft = Math.max(0, g.roundEndsAt - Date.now());
+      fillEl.style.width = Math.round((msLeft/30000)*100) + '%';
+      fillEl.classList.toggle('low', msLeft <= 5000);
+    }
   } else {
+    lastTimerRoundEndsAt = null;
     timerRow.style.display = 'none';
   }
 
@@ -1525,6 +1588,9 @@ function create3DCubeHtml(targetVal) {
 // timestamp the server already sent.
 setInterval(() => {
   if (latestState && latestState.phase === 'playing' && latestState.game && !latestState.game.gameOver && latestState.game.roundEndsAt) {
+    // Don't fight the 3s buildup animation with a competing width update
+    // while it's still playing.
+    if (timerBuildupStartedAt && Date.now() - timerBuildupStartedAt < 3200) return;
     const msLeft = Math.max(0, latestState.game.roundEndsAt - Date.now());
     const fill = document.getElementById('timerFill');
     if (fill) {
