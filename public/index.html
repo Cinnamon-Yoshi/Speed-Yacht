@@ -20,7 +20,7 @@
   :root{
     --bg:#0b3d2e; --gold:#d4af37; --die-size:56px;
     --cat-col-width:calc(var(--die-size) * 2 + 9px); --player-col-width:var(--die-size);
-    --player-count:2; --row-height:50px; --gap:4px;
+    --player-count:2; --row-height:50px; --gap:7px;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{
@@ -58,8 +58,8 @@
   .timer-fill{ height:100%; width:100%; background:var(--gold); border-radius:4px; transition:width 1s linear, background-color 1s linear; }
   .timer-fill.low{ background:#e01010; }
 
-  .dice-row{ display:flex; gap:8px; margin-bottom:10px; justify-content:center; perspective:600px; align-items:center; }
-  .dice-slider{ position:relative; flex:1; max-width:290px; height:var(--die-size); }
+  .dice-row{ display:flex; gap:var(--gap); margin-bottom:10px; justify-content:center; perspective:600px; align-items:center; }
+  .dice-slider{ position:relative; width:calc(var(--die-size) * 5 + var(--gap) * 4); height:var(--die-size); }
 
   /* Roll button — ported from the proven design: a square button sized
      like a die, sitting inline as the FIRST element in the dice row,
@@ -185,6 +185,7 @@
   .cat-player-merged .merged-icon{ display:flex; justify-content:center; height:100%; align-items:center; }
   .cat-player-merged .merged-score{ text-align:center; font-weight:800; color:var(--gold); }
   .sc-player-cell.scored{ color:#fff; font-weight:400; }
+  .sc-player-cell.current-pick{ color:var(--gold); font-weight:900; }
   .sc-total-row{
     height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none; border-radius:8px; margin-top:4px;
   }
@@ -340,7 +341,7 @@
     border-radius:0 0 14px 14px; border:1px solid rgba(255,255,255,0.1); border-top:none;
     position:relative;
   }
-  #screenPlaying .scoresheet{ border:none; border-radius:0; }
+  #screenPlaying .scoresheet{ border:none; border-radius:0; overflow:visible; }
 
   .lobby-input{
     width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
@@ -491,7 +492,7 @@
         <input type="number" class="gi-setting-input" id="editYahtzeeBonus" value="100">
       </div>
       <div class="gi-setting-row"><span>Fill empty seats with bots:</span>
-        <div class="toggle on" id="editBotsToggle"><div class="knob"></div></div>
+        <div class="toggle" id="editBotsToggle"><div class="knob"></div></div>
       </div>
       <div class="gi-setting-row gi-desc-row">
         <span>Description (optional):</span>
@@ -522,7 +523,6 @@
       <div class="timer-row" id="timerRow" style="display:none;">
         <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
       </div>
-      <div class="play-status" id="playStatus"></div>
     </div>
 
     <div class="scoresheet-container">
@@ -607,7 +607,11 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.15';
+const APP_VERSION = '1.17';
+
+function triggerHaptic() {
+  if (navigator.vibrate) navigator.vibrate(15);
+}
 document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 
 const socket = io();
@@ -686,6 +690,32 @@ document.getElementById('editBotsToggle').onclick = function(){
   document.getElementById(id).onchange = emitLiveSettings;
 });
 document.getElementById('editDescription').oninput = emitLiveSettings;
+function syncSettingSelectWidths(){
+  const selects = [...document.querySelectorAll('.gi-setting-select')];
+  const inputs = [...document.querySelectorAll('.gi-setting-input')];
+  const allFields = [...selects, ...inputs];
+  if (!allFields.length) return;
+  const probe = document.createElement('span');
+  const cs = getComputedStyle(allFields[0]);
+  probe.style.cssText = `position:absolute; visibility:hidden; white-space:nowrap; font-size:${cs.fontSize}; font-weight:${cs.fontWeight}; font-family:${cs.fontFamily};`;
+  document.body.appendChild(probe);
+  let maxTextWidth = 0;
+  // Only the dropdown OPTION text sets the target width — the number
+  // inputs' current values are much shorter and just adopt whatever
+  // width the selects need, so all fields read as one consistent
+  // column instead of selects and number boxes being different widths
+  // side by side.
+  selects.forEach(sel => {
+    [...sel.options].forEach(opt => {
+      probe.textContent = opt.textContent;
+      maxTextWidth = Math.max(maxTextWidth, probe.getBoundingClientRect().width);
+    });
+  });
+  probe.remove();
+  const width = Math.ceil(maxTextWidth) + 16 + 2 + 14;
+  allFields.forEach(el => { el.style.width = width + 'px'; });
+}
+
 function populateEditForm(settings){
   document.getElementById('editRolls').value = settings.rollsPerTurn;
   document.getElementById('editAdvance').value = settings.roundAdvance;
@@ -694,6 +724,7 @@ function populateEditForm(settings){
   document.getElementById('editYahtzeeBonus').value = settings.yahtzeeBonus;
   document.getElementById('editBotsToggle').classList.toggle('on', !!settings.fillWithBots);
   document.getElementById('editDescription').value = settings.description || '';
+  syncSettingSelectWidths();
 }
 
 function emitLiveSettings(){
@@ -799,7 +830,7 @@ const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS);
 // gets committed when you pick_category; this client copy never writes
 // anything, so there's no way a mismatched preview could let someone
 // score more than the server allows.
-function previewScoreFor(key, dice, settings) {
+function previewScoreFor(key, dice, settings, existingScores) {
   const counts = {};
   dice.forEach(v => counts[v] = (counts[v] || 0) + 1);
   const countValues = Object.values(counts);
@@ -813,6 +844,21 @@ function previewScoreFor(key, dice, settings) {
     }
     return len <= 1;
   }
+  const upperKeys = ['ones','twos','threes','fours','fives','sixes'];
+  // Same Yahtzee Joker Rule as the server's scoreFor — kept in sync so
+  // the live preview shown before committing matches what the server
+  // will actually score.
+  if (existingScores && key !== 'yahtzee' && new Set(dice).size === 1 && existingScores['yahtzee'] === (settings.firstYahtzee || 50)) {
+    const matchedFace = dice[0];
+    const upperKeyForFace = upperKeys[matchedFace - 1];
+    if (existingScores[upperKeyForFace] == null) {
+      if (key === upperKeyForFace) return matchedFace * 5;
+    } else {
+      if (key === 'fullHouse') return 25;
+      if (key === 'smStraight') return 30;
+      if (key === 'lgStraight') return 40;
+    }
+  }
   switch (key) {
     case 'ones': return (counts[1]||0)*1;
     case 'twos': return (counts[2]||0)*2;
@@ -825,8 +871,7 @@ function previewScoreFor(key, dice, settings) {
     case 'fullHouse': {
       const sorted = countValues.slice().sort();
       const proper = sorted.length===2 && sorted[0]===2 && sorted[1]===3;
-      const fiveOfAKind = countValues.some(c=>c===5);
-      return (proper || fiveOfAKind) ? 25 : 0;
+      return proper ? 25 : 0;
     }
     case 'smStraight': return hasStraight(4) ? 30 : 0;
     case 'lgStraight': return hasStraight(5) ? 40 : 0;
@@ -875,6 +920,7 @@ function requestRoll() {
   isRollingLocally = true;
   rollAnimTimerFired = false;
   rollServerDataReady = false;
+  triggerHaptic();
   rollsUsedBeforeThisRoll = myG.rollsUsed;
   renderPlaying(st); // immediately show the spin, before the server even responds
   socket.emit('roll_dice');
@@ -946,12 +992,16 @@ function renderPlaying(state) {
       fillEl.style.transition = 'none';
       fillEl.style.width = '0%';
       fillEl.classList.remove('low');
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          fillEl.style.transition = 'width 3s linear, background-color 1s linear';
-          fillEl.style.width = '100%';
-        });
-      });
+      // Force a synchronous reflow so the browser actually commits the
+      // 0%-with-no-transition state before we re-enable the transition
+      // and jump to 100% — otherwise the two style changes can get
+      // batched into one paint and the animation never visually plays.
+      // This is more reliable than double-requestAnimationFrame, which
+      // depends on the browser actually scheduling paint frames and can
+      // silently never fire under some conditions.
+      void fillEl.offsetWidth;
+      fillEl.style.transition = 'width 3s linear, background-color 1s linear';
+      fillEl.style.width = '100%';
       const onBuildupDone = (e) => {
         if (e.propertyName !== 'width') return;
         fillEl.removeEventListener('transitionend', onBuildupDone);
@@ -961,7 +1011,11 @@ function renderPlaying(state) {
         fillEl.classList.toggle('low', msLeftNow <= 5000);
       };
       fillEl.addEventListener('transitionend', onBuildupDone);
-    } else {
+    } else if (!timerBuildupStartedAt || Date.now() - timerBuildupStartedAt >= 3200) {
+      // Only update directly once the buildup window has actually
+      // finished — otherwise a state_update arriving mid-buildup would
+      // overwrite the queued transition before it's had a chance to
+      // visually play.
       const msLeft = Math.max(0, g.roundEndsAt - Date.now());
       fillEl.style.width = Math.round((msLeft/30000)*100) + '%';
       fillEl.classList.toggle('low', msLeft <= 5000);
@@ -982,9 +1036,13 @@ function renderPlaying(state) {
   const canInteract = !myG.doneThisRound;
   const slider = document.getElementById('diceSlider');
   const dieSizeNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--die-size')) || 56;
-  const sliderWidth = slider.getBoundingClientRect().width || (5*dieSizeNum);
-  const slotGap = Math.max(0, (sliderWidth - 5*dieSizeNum) / 4);
-  const step = dieSizeNum + slotGap;
+  // step is derived from the SAME --gap the scoresheet's grid columns
+  // use (not measured from the slider's own rendered width) — this is
+  // what actually guarantees the dice line up with the player columns
+  // underneath, rather than two independently-computed spacing systems
+  // that only coincidentally might match.
+  const gapNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 7;
+  const step = dieSizeNum + gapNum;
 
   slider.innerHTML = diceVisualOrder.map((actualIndex, slot) => {
     const val = myG.dice[actualIndex];
@@ -1015,7 +1073,7 @@ function renderPlaying(state) {
     rollBtn.classList.add('oops-mode');
     rollBtn.disabled = false;
     rollBtn.innerHTML = '<span class="rl-label">OOPS</span><span class="rl-num-single">UNDO</span>';
-    rollBtn.onclick = () => socket.emit('undo_pick');
+    rollBtn.onclick = () => { socket.emit('undo_pick'); triggerHaptic(); };
   } else {
     rollBtn.classList.remove('oops-mode');
     rollBtn.disabled = !canInteract || rollsLeft <= 0 || isRollingLocally;
@@ -1026,11 +1084,6 @@ function renderPlaying(state) {
     rollBtn.innerHTML = `<span class="rl-label">${isRollingLocally ? '…' : 'ROLL'}</span><span class="rl-num-single">${displayNum}</span>`;
     rollBtn.onclick = requestRoll;
   }
-
-  document.getElementById('playStatus').textContent =
-    isRollingLocally ? '' :
-    myG.doneThisRound ? "You're done this round — waiting on other players…" :
-    (myG.rollsUsed === 0 ? 'Tap Roll to get started.' : 'Tap a die to hold it, or pick a category below.');
 
   renderScoresheet(state);
 }
@@ -1051,6 +1104,7 @@ function setupUnifiedDiePointer(el, step, dieSizeNum) {
     dragging = true;
     el.classList.add('picked-up');
     el.setPointerCapture(e.pointerId);
+    triggerHaptic();
   });
 
   el.addEventListener('pointermove', (e) => {
@@ -1068,11 +1122,11 @@ function setupUnifiedDiePointer(el, step, dieSizeNum) {
       // slot, newLeft clamps to exactly maxLeft, making center exactly
       // equal neighborCenter rather than ever exceeding it — a strict >
       // can never fire there, silently breaking dragging into the last slot.
-      if (center >= neighborCenter) { swapSlots(dragSlot, rightNeighbor, el, step); dragSlot = rightNeighbor; }
+      if (center >= neighborCenter) { swapSlots(dragSlot, rightNeighbor, el, step); dragSlot = rightNeighbor; triggerHaptic(); }
     }
     if (leftNeighbor >= 0) {
       const neighborCenter = leftNeighbor * step + dieSizeNum / 2;
-      if (center <= neighborCenter) { swapSlots(dragSlot, leftNeighbor, el, step); dragSlot = leftNeighbor; }
+      if (center <= neighborCenter) { swapSlots(dragSlot, leftNeighbor, el, step); dragSlot = leftNeighbor; triggerHaptic(); }
     }
   });
 
@@ -1085,6 +1139,7 @@ function setupUnifiedDiePointer(el, step, dieSizeNum) {
     if (!el.__didSwap) {
       const actualIndex = parseInt(el.dataset.actualIndex, 10);
       socket.emit('toggle_hold', actualIndex);
+      triggerHaptic();
     }
     el.__didSwap = false;
   };
@@ -1122,7 +1177,19 @@ function renderScoresheet(state) {
     const pg = g.players[p.id];
     if (!pg) return '<div class="sc-player-cell">—</div>';
     const hasScore = Object.prototype.hasOwnProperty.call(pg.scores, key);
-    if (hasScore) return `<div class="sc-player-cell scored">${pg.scores[key]}</div>`;
+    if (hasScore) {
+      // Only THIS round's pick gets the bold-gold emphasis — matching
+      // the proven design exactly. An older score (from any earlier
+      // round) shows the plain/default styling. pickedThisRound gets
+      // reset to null at the start of every new round server-side, so
+      // this naturally reverts once the round actually moves on, not
+      // immediately after committing within the SAME round.
+      const isCurrentPick = pg.pickedThisRound && pg.pickedThisRound.key === key;
+      if (isCurrentPick) {
+        return `<div class="sc-player-cell current-pick">${pg.scores[key]}</div>`;
+      }
+      return `<div class="sc-player-cell scored">${pg.scores[key]}</div>`;
+    }
     if (p.id === myId && myG && !myG.doneThisRound && myG.rollsUsed > 0) {
       // Live pickable preview for MY column only — rendered as the
       // merged icon+score cell below instead of a plain cell, so this
@@ -1141,7 +1208,7 @@ function renderScoresheet(state) {
 
     let firstCellHtml;
     if (iAmPickable) {
-      const preview = previewScoreFor(key, myPg.dice, state.settings);
+      const preview = previewScoreFor(key, myPg.dice, state.settings, myPg.scores);
       firstCellHtml = `<div class="cat-player-merged thin-outline${preview===0?' zero-preview':''}" data-key="${key}">
         <div class="merged-icon">${catIconHtml(key)}</div>
         <div class="merged-score">${preview}</div>
@@ -1192,7 +1259,7 @@ function renderScoresheet(state) {
 
   document.getElementById('scoresheet').innerHTML = header + rows + bonusRow + totalRow;
   document.querySelectorAll('.cat-player-merged').forEach(el => {
-    el.onclick = () => socket.emit('pick_category', el.dataset.key);
+    el.onclick = () => { socket.emit('pick_category', el.dataset.key); triggerHaptic(); };
   });
 }
 
