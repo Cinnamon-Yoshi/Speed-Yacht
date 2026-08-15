@@ -26,6 +26,7 @@
   body{
     margin:0; background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     color:#fff; display:flex; justify-content:center; padding:16px 10px 60px; min-height:100vh;
+    overflow-x:hidden; /* safety net — the dynamic die-size computation should already prevent any overflow, but this ensures a small miscalculation clips invisibly instead of becoming visible horizontal scroll */
   }
   .wrap{max-width:430px;width:100%;}
   .phone{ background:var(--bg); border-radius:20px; padding:16px; }
@@ -201,7 +202,7 @@
   /* Live "need N more" progress toward the 63 upper-section bonus —
      ported from the proven design, shown right after Sixes. */
   .sc-upper-bonus-row .sc-cat-cell{
-    font-style:italic; opacity:0.7; font-size:0.62em; line-height:1.3;
+    font-style:italic; opacity:0.7; line-height:1.3;
     justify-content:center; text-align:center; padding-left:0;
   }
   .sc-upper-bonus-row .sc-player-cell{ font-weight:800; font-size:0.85em; color:var(--gold); }
@@ -415,7 +416,7 @@
   .status-msg{ text-align:center; font-size:0.82em; opacity:0.65; margin-top:12px; }
   .conn-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:#ff6b6b; }
   .conn-dot.connected{ background:#5fd38d; }
-  .conn-status{ text-align:center; font-size:0.7em; opacity:0.5; margin-bottom:12px; }
+  .conn-status{ display:flex; align-items:center; font-size:0.7em; opacity:0.6; }
 </style>
 </head>
 <body>
@@ -426,9 +427,9 @@
       <svg class="h-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" rx="20" fill="#0b3d2e"/><g transform="rotate(45 50 50)"><rect x="20" y="20" width="60" height="60" rx="12" fill="#ffffff"/><circle cx="35" cy="35" r="7" fill="#0b3d2e"/><circle cx="65" cy="35" r="7" fill="#0b3d2e"/><circle cx="50" cy="50" r="7" fill="#0b3d2e"/><circle cx="35" cy="65" r="7" fill="#0b3d2e"/><circle cx="65" cy="65" r="7" fill="#0b3d2e"/></g></svg>
       Speed-Yacht
     </div>
+    <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
     <span class="version-tag" id="appVersion"></span>
   </div>
-  <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
 
   <!-- Lobby -->
   <div class="screen active" id="screenLobby">
@@ -466,6 +467,7 @@
         <button class="primary-btn" id="pinSubmitBtn">Unlock</button>
       </div>
     </div>
+    <div class="gamelog-link" id="openGameLogFromWaiting" style="margin-top:14px;">📖 Game Log</div>
   </div>
 
   <!-- Edit (host only) -->
@@ -607,7 +609,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.18';
+const APP_VERSION = '1.19';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -1090,21 +1092,28 @@ function renderPlaying(state) {
   // that only coincidentally might match.
   const gapNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 7;
   const step = dieSizeNum + gapNum;
+  // Doesn't vary per-die, so compute it once rather than inside the map.
+  const clickable = canInteract && myG.rollsUsed > 0 && !isRollingLocally;
 
   slider.innerHTML = diceVisualOrder.map((actualIndex, slot) => {
     const val = myG.dice[actualIndex];
     const held = myG.held[actualIndex];
-    const clickable = canInteract && myG.rollsUsed > 0 && !isRollingLocally;
     const spinning = isRollingLocally && !held;
+    // isLocked (the DIMMED visual) is distinct from clickable (which
+    // gates interaction) — matching the proven design exactly: a die
+    // should only look dimmed/locked before the very first roll has
+    // happened, never while it's actively mid-spin (spinning already
+    // makes that clear enough visually on its own).
+    const isLocked = myG.rollsUsed === 0 && !isRollingLocally;
     const animClass = spinning ? ` is-rolling rolling-${(actualIndex%3)+1}` : '';
-    return `<div class="die-container${held?' held':''}${clickable?'':' locked'}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
+    return `<div class="die-container${held?' held':''}${isLocked?' locked':''}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
       ${create3DCubeHtml(val)}
       ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
     </div>`;
   }).join('');
 
   slider.querySelectorAll('.die-container').forEach(el => {
-    if (canInteract && myG.rollsUsed > 0 && !isRollingLocally) {
+    if (clickable) {
       setupUnifiedDiePointer(el, step, dieSizeNum);
     }
   });
@@ -1257,9 +1266,15 @@ function renderScoresheet(state) {
     let firstCellHtml;
     if (iAmPickable) {
       const preview = previewScoreFor(key, myPg.dice, state.settings, myPg.scores);
-      firstCellHtml = `<div class="cat-player-merged thin-outline${preview===0?' zero-preview':''}" data-key="${key}">
+      // Matching the reference exactly: the gold outline only shows for
+      // a POSITIVE preview, never for zero — and a zero preview shows
+      // as blank (dimmed), not literally the text "0".
+      const isPositive = preview > 0;
+      const isZero = preview === 0;
+      const shown = isZero ? '' : preview;
+      firstCellHtml = `<div class="cat-player-merged${isPositive?' thin-outline':''}${isZero?' zero-preview':''}" data-key="${key}">
         <div class="merged-icon">${catIconHtml(key)}</div>
-        <div class="merged-score">${preview}</div>
+        <div class="merged-score">${shown}</div>
       </div>`;
     } else {
       firstCellHtml = `<div class="sc-cat-cell sc-cat-icon-cell">${catIconHtml(key)}</div>${playerCell(mine, key)}`;
@@ -1295,7 +1310,7 @@ function renderScoresheet(state) {
     const pg = g.players[p.id];
     return `<div class="sc-player-cell">${pg ? pg.total : 0}</div>`;
   }).join('');
-  const totalRow = `<div class="sc-row grid-row sc-total-row"><div class="sc-cat-cell">Total</div>${totalCells}</div>`;
+  const totalRow = `<div class="sc-row grid-row sc-total-row"><div class="sc-cat-cell sc-cat-icon-cell">Total</div>${totalCells}</div>`;
 
   const bonusCells = players.map(p => {
     const pg = g.players[p.id];
@@ -1498,6 +1513,11 @@ socket.on('game_log_update', (log) => {
 
 document.getElementById('openGameLogFromLobby').onclick = () => {
   glReturnScreen = 'screenLobby';
+  showScreen('screenGameLog');
+  renderGameLog();
+};
+document.getElementById('openGameLogFromWaiting').onclick = () => {
+  glReturnScreen = 'screenWaiting';
   showScreen('screenGameLog');
   renderGameLog();
 };
