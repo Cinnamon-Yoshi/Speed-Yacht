@@ -82,6 +82,33 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.20 — roll button text, a real iOS scroll fix, and row-height consistency
+
+- **Roll button showed "…" during the spin instead of "ROLL"** —
+  confirmed against the reference: it always shows "ROLL", never a
+  substitute. That "…" swap was something I'd added with no basis in
+  the proven design. Removed it.
+- **Horizontal scroll still possible on mobile despite last session's
+  `overflow-x:hidden`** — the screenshot made this click: that's a
+  well-known iOS Safari quirk where `overflow-x:hidden` on `body`
+  alone often isn't sufficient to actually prevent scrolling; `html`
+  needs it too. Added it there as well. (Checked for actual DOM
+  overflow during the dice roll animation itself, in case the 3D
+  rotation was pushing real layout bounds — it wasn't; `scrollWidth`
+  stayed matched to `clientWidth` throughout. The visual overlap
+  during rotation is the intended 3D tumble effect, matching the
+  reference's identical technique, not overflow.)
+- **Yahtzee Bonus row shorter than every other row** — confirmed
+  real: it had its own `height:36px` override where the reference
+  (for its equivalent bonus-style rows) has no special height at all,
+  just the same shared row height as everything else. Removed the
+  override.
+
+Full regression suite (6 files) re-run after all three fixes — all
+passing. Also directly verified in a real browser: the roll button
+correctly reads "ROLL1" mid-animation, and every row measures the same
+50px height including both bonus rows.
+
 ## v1.19 — dice dimming, zero-preview cleanup, Total alignment, and a real finding on bots
 
 - **Dice looked transparent/dimmed during the roll animation** —
