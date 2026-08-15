@@ -82,6 +82,53 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.19 — dice dimming, zero-preview cleanup, Total alignment, and a real finding on bots
+
+- **Dice looked transparent/dimmed during the roll animation** —
+  confirmed real: the same `.locked` (dimmed) styling that's meant for
+  "hasn't rolled yet" was also being applied during every spin
+  animation, since both conditions shared the same `!clickable` check.
+  Separated them — dimming now only applies before the very first roll,
+  never while a die is actively spinning.
+- **Zero-value categories showed a gold outline and the literal text
+  "0"** — confirmed real against the reference: the outline should
+  only appear for a positive preview, and a zero preview should render
+  blank, not as text. Both fixed to match exactly.
+- **"63 Bonus (need)" label too small** — it had its own smaller
+  font-size override; the reference just lets it inherit the same size
+  as regular category labels. Removed the override.
+- **"Total" not centered** — confirmed against the reference, which
+  explicitly adds a `centered` class to this specific label (unlike
+  every other row, which is left-aligned). Fixed to match.
+- **Connected indicator on its own line** — moved into the same row as
+  the title and version, removing the extra vertical space.
+- **No Game Log link outside the Lobby** — it existed on the Lobby
+  screen but nowhere else; the Waiting Room (where players actually
+  spend time before a game starts) had no way to reach it. Added it
+  there too, correctly wired to return to the Waiting Room rather than
+  the Lobby.
+- **Horizontal scroll on mobile** — tested directly at 320px and 375px
+  viewports, including with long player names, across every pre-game
+  screen and the Playing screen with 4 players — found zero overflow
+  with the current code. This was very likely already resolved by the
+  dynamic die-size fix from the previous session (which hadn't shipped
+  yet when the screenshot was taken). Added `overflow-x:hidden` on the
+  body as a defensive safety net regardless, so a future few-pixel
+  miscalculation clips invisibly instead of becoming visible scroll.
+- **Bots** — real progress on understanding the failure, but not
+  fixed. A moderately-paced full-game test (bots committing every
+  0.6–1.2s, well short of the earlier extreme 50-150ms range) hung at
+  round 3 — the same failure mode as before, now confirmed to
+  reproduce at more realistic speeds too, not just extreme ones. This
+  rules out my earlier hope that production-realistic timing would
+  sidestep it. There's a genuine, timing-correlated bug in the bot
+  round-advancement logic that needs focused debugging time on its
+  own, not something to patch in alongside everything else. Still
+  gated behind `ENABLE_BOTS`, off by default.
+
+Full regression suite (6 files) re-run after all of the above — all
+passing.
+
 ## v1.18 — six real fixes from screenshot feedback, one honest non-fix
 
 You sent side-by-side screenshots this time, which made a couple of
