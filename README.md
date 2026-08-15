@@ -82,6 +82,54 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.21 — bots removed, screens merged, real margin fix confirmed
+
+Same four items as last time — this entry documents the actual
+verification, since last session's response got cut off before I'd
+confirmed the fixes actually worked (a Puppeteer test was crashing and
+I hadn't yet determined why).
+
+- **Bots removed entirely**, as requested rather than continuing to
+  debug them. Swept both `server.js` and the client for every trace —
+  the toggle UI, the settings field, the autonomous bot AI, the
+  `ENABLE_BOTS` gate, the round-start bot-adding logic. Confirmed
+  clean via a full grep sweep.
+- **Round Summary + "…and now Round X" merged into one screen**,
+  matching the explicit request: the scores table now stays visible
+  throughout, with the intro message added below it (with a divider)
+  rather than replacing it on a second screen. Worth being clear this
+  is a deliberate departure from the proven reference file, which does
+  use two separate screens here — implemented what was asked for
+  specifically.
+- **Margin/border issue — real cause found and fixed.** `.scoresheet`
+  carried a `padding: 0 4px` that the Playing-screen-specific override
+  reset border/radius/overflow for, but never reset padding — so every
+  row, including Total, sat 4px inset from the container on both
+  sides. Removed it, and added the reference's own small
+  `padding-right: 5px` on individual rows so the last column still
+  gets breathing room without a wrapper-level inset. Verified by
+  measuring the Total row's actual edges against the phone container's
+  edges: now 17px on both sides, matching the phone's own intentional
+  16px padding — meaning the extra unwanted inset is gone.
+- **"Full-30" → "Timer"** in both places it's shown (the settings
+  dropdown and the Accept-screen summary), leaving the underlying
+  stored value unchanged so no server logic or existing tests needed
+  touching.
+
+Also worth documenting: hit a real, reproducible-looking crash while
+testing this batch (Puppeteer's screenshot call consistently killing
+the page). Traced it to a known sandbox quirk from earlier in this
+project — 2+ pages with active Socket.io connections plus a screenshot
+call can crash the target — not a bug in the app itself. Confirmed by
+isolating the exact same interaction sequence without a screenshot
+(clean), then with one after closing the second page first (also
+clean, screenshot succeeded). All three visual fixes above were then
+verified through both direct geometry/state checks and a real
+screenshot.
+
+Full regression suite (6 files) re-run after all changes — all
+passing.
+
 ## v1.20 — roll button text, a real iOS scroll fix, and row-height consistency
 
 - **Roll button showed "…" during the spin instead of "ROLL"** —
