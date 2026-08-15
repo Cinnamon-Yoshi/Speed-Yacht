@@ -140,11 +140,11 @@
   .cat-icon.stack{ flex-direction:column; gap:2px; align-items:center; justify-content:center; }
   .cat-icon.stack .row{ display:flex; gap:2px; }
   .mini-die{ position:relative; width:19px; height:19px; background:rgba(255,255,255,0.92); border-radius:4px; flex:0 0 auto; }
-  .mini-die.solo{ width:28px; height:28px; border-radius:6px; }
+  .mini-die.solo{ width:32px; height:32px; border-radius:6px; }
   .mini-die .pipgrid{ inset:16%; }
   .mini-die .pip{ background:#111; }
-  .chance-mark{ font-size:1.5em; font-weight:900; color:#fff; line-height:1; }
-  .cat-icon .trophy{ font-size:1.3em; line-height:1; }
+  .chance-mark{ font-size:1.8em; font-weight:900; color:#fff; line-height:1; }
+  .cat-icon .trophy{ font-size:1.6em; line-height:1; }
   .hold-lbl{ position:absolute; top:100%; left:50%; transform:translateX(-50%); margin-top:3px; font-size:0.6em; font-weight:700; opacity:0.6; white-space:nowrap; }
 
   .play-status{ text-align:center; font-size:0.78em; opacity:0.65; margin:8px 0 14px; min-height:1.2em; }
@@ -183,9 +183,9 @@
   .cat-player-merged.thin-outline{ outline:1.5px solid var(--gold); outline-offset:-1.5px; }
   .cat-player-merged.zero-preview{ opacity:0.4; }
   .cat-player-merged .merged-icon{ display:flex; justify-content:center; height:100%; align-items:center; }
-  .cat-player-merged .merged-score{ text-align:center; font-weight:800; color:var(--gold); }
-  .sc-player-cell.scored{ color:#fff; font-weight:400; }
-  .sc-player-cell.current-pick{ color:var(--gold); font-weight:900; }
+  .cat-player-merged .merged-score{ text-align:center; font-weight:900; font-size:1.65em; color:var(--gold); }
+  .sc-player-cell.scored{ color:#fff; font-weight:400; font-size:1.1em; }
+  .sc-player-cell.current-pick{ color:var(--gold); font-weight:900; font-size:1.65em; }
   .sc-total-row{
     height:50px; background:#20482f; border-top:2px solid rgba(212,175,55,0.4); border-bottom:none; border-radius:8px; margin-top:4px;
   }
@@ -607,7 +607,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.17';
+const APP_VERSION = '1.18';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -906,6 +906,7 @@ let rollsUsedBeforeThisRoll = 0;
 // needed for reordering at all.
 let diceVisualOrder = [0, 1, 2, 3, 4];
 let lastRoundForVisualOrder = null;
+let lastAutoRolledRound = null;
 let lastTimerRoundEndsAt = null;
 let timerBuildupStartedAt = null;
 
@@ -960,8 +961,36 @@ function renderHeaderBar(state) {
   document.getElementById('headerBar').innerHTML = html;
 }
 
+function syncStickySizes() {
+  // Ported from the proven design: die-size (and everything derived
+  // from it — category/player column widths) is computed to actually
+  // FILL the real available width, rather than assuming a fixed 56px
+  // always fits. Without this, on any viewport wider than what that
+  // fixed guess happened to match, both the dice row and the
+  // scoresheet end up narrower than the available space — showing up
+  // as excess side margins, and since centering behavior isn't
+  // perfectly identical between the two, as column misalignment too.
+  const phone = document.querySelector('.phone');
+  if (!phone) return;
+  const phoneStyles = getComputedStyle(phone);
+  const paddingLeft = parseFloat(phoneStyles.paddingLeft) || 0;
+  const paddingRight = parseFloat(phoneStyles.paddingRight) || 0;
+  const availableWidth = phone.clientWidth - paddingLeft - paddingRight;
+  if (availableWidth <= 0) return;
+  const gapNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 7;
+  // Dice row = roll button (1 die-width) + its own gap to the slider +
+  // slider (5 die-widths + 4 gaps) = 6 die-widths + 5 gaps total.
+  const dieSize = Math.floor((availableWidth - 5 * gapNum) / 6);
+  if (dieSize <= 0) return;
+  document.documentElement.style.setProperty('--die-size', dieSize + 'px');
+  document.documentElement.style.setProperty('--cat-col-width', Math.round(dieSize * 2 + 9) + 'px');
+  document.documentElement.style.setProperty('--player-col-width', dieSize + 'px');
+}
+window.addEventListener('resize', syncStickySizes);
+
 function renderPlaying(state) {
   const g = state.game;
+  syncStickySizes();
   renderHeaderBar(state);
 
   const myG = g.players[myId];
@@ -1030,6 +1059,24 @@ function renderPlaying(state) {
   if (g.round !== lastRoundForVisualOrder) {
     diceVisualOrder = [0, 1, 2, 3, 4];
     lastRoundForVisualOrder = g.round;
+  }
+
+  // Auto-roll the first roll of a fresh round — matching the proven
+  // design, where the round's opening roll happens automatically once
+  // the timer/intro settles rather than requiring a manual first click.
+  // Full-30 mode waits for the same 3s the buildup animation takes;
+  // When-Ready mode (no timer bar at all) uses a short fixed delay so
+  // it doesn't feel instant/jarring.
+  if (g.round !== lastAutoRolledRound && myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally) {
+    lastAutoRolledRound = g.round;
+    const autoRollDelay = g.roundEndsAt ? 3000 : 600;
+    setTimeout(() => {
+      const st = latestState;
+      if (!st || !st.game || st.game.gameOver) return;
+      if (st.game.round !== g.round || st.game.roundPhase !== 'playing') return; // round already moved on
+      const freshG = st.game.players[myId];
+      if (freshG && freshG.rollsUsed === 0 && !freshG.doneThisRound && !isRollingLocally) requestRoll();
+    }, autoRollDelay);
   }
 
   // Dice
@@ -1170,8 +1217,9 @@ function renderScoresheet(state) {
   const players = displayPlayers(state); // "me" always first — see displayPlayers()
   const myG = g.players[myId];
 
-  let header = '<div class="sc-header grid-row"><div class="sc-name-col"></div>' +
-    players.map(p => `<div class="sc-player-col">${p.name}</div>`).join('') + '</div>';
+  // Note: no repeated name-header row here — player names are already
+  // shown once in the header bar above the timer (renderHeaderBar).
+  // The proven design doesn't duplicate them inside the scoresheet.
 
   function playerCell(p, key) {
     const pg = g.players[p.id];
@@ -1257,7 +1305,7 @@ function renderScoresheet(state) {
   });
   const bonusRow = `<div class="sc-row grid-row sc-bonus-row"><div class="sc-cat-cell">Yahtzee Bonus</div>${bonusCells.join('')}</div>`;
 
-  document.getElementById('scoresheet').innerHTML = header + rows + bonusRow + totalRow;
+  document.getElementById('scoresheet').innerHTML = rows + bonusRow + totalRow;
   document.querySelectorAll('.cat-player-merged').forEach(el => {
     el.onclick = () => { socket.emit('pick_category', el.dataset.key); triggerHaptic(); };
   });
