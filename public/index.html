@@ -75,6 +75,11 @@
     align-items:center; justify-content:center; text-align:center;
     padding:2px; gap:1px; box-shadow:inset 0 0 8px rgba(0,0,0,0.6), 0 0 10px rgba(255,255,255,0.15);
     transition:background-color 0.2s, border-color 0.2s, color 0.2s;
+    /* The bright white border sits right at the button's edge, which
+       visually "eats into" the standard gap more than a die's
+       borderless edge does — same numeric gap, but it reads as
+       noticeably tighter. A couple extra px here compensates. */
+    margin-right:2px;
   }
   .roll-die-btn:disabled{ background:#1a241d; color:#555; border-color:rgba(255,255,255,0.25); box-shadow:none; }
   .roll-die-btn .rl-label{ font-size:1.05em; letter-spacing:0.5px; font-weight:900; line-height:1; color:var(--gold); }
@@ -341,7 +346,7 @@
   }
   #screenPlaying .sticky-top{ flex-shrink:0; }
   #screenPlaying .scoresheet-container{
-    flex:1; min-height:0; overflow-y:auto;
+    flex:1; min-height:0; overflow-y:auto; overflow-x:hidden;
     border-radius:0 0 14px 14px; border:1px solid rgba(255,255,255,0.1); border-top:none;
     position:relative;
   }
@@ -612,7 +617,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.21';
+const APP_VERSION = '1.22';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -621,6 +626,7 @@ document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 
 const socket = io();
 let myId = null;
+let myName = null; // set on the FIRST successful join, then reused to auto-rejoin on every reconnect (see socket.on('connect') below) — without this, a reconnecting socket is a total stranger to the server, which has no way to re-associate it with the player's existing seat
 let amHost = false;
 let editFormPopulated = false;
 let latestState = null;
@@ -636,14 +642,38 @@ function showScreen(id){
 socket.on('connect', () => {
   document.getElementById('connDot').classList.add('connected');
   document.getElementById('connText').textContent = 'Connected';
+  // CRITICAL for reconnection: the server's join_lobby handler has real
+  // logic to re-associate a reconnecting socket with the player's
+  // existing seat (matched by name) — but that logic only ever runs if
+  // join_lobby actually gets emitted. A dropped connection (locked
+  // phone, backgrounded tab, flaky wifi) gets a brand new socket.id on
+  // reconnect, and without this, the server would have no idea it's the
+  // same player — myId would keep pointing at the old, now-disconnected
+  // id, myG would resolve to undefined, and the UI would stay frozen on
+  // whatever it last rendered (including mid-roll-animation) forever,
+  // eventually leading to the seat being removed once the grace period
+  // expires and the player being locked out entirely.
+  if (myName) {
+    socket.emit('join_lobby', myName);
+    // Defensive reset: if a roll animation was stuck in-flight when the
+    // connection dropped, don't leave it spinning forever waiting on a
+    // queued timer that may never fire (a backgrounded/suspended tab
+    // can lose queued timers entirely, not just delay them). The next
+    // state_update will bring the real, current dice/scores.
+    isRollingLocally = false;
+    rollAnimTimerFired = false;
+    rollServerDataReady = false;
+  }
 });
 socket.on('disconnect', () => {
   document.getElementById('connDot').classList.remove('connected');
   document.getElementById('connText').textContent = 'Disconnected — reconnecting…';
 });
 
+let pendingJoinName = null; // the name just attempted — committed to myName only once the server confirms via 'joined', not optimistically on click
 document.getElementById('joinBtn').onclick = () => {
   const name = document.getElementById('nameInput').value;
+  pendingJoinName = name;
   socket.emit('join_lobby', name);
 };
 socket.on('join_error', (msg) => {
@@ -654,6 +684,7 @@ socket.on('join_error', (msg) => {
 socket.on('joined', ({ id, isHost }) => {
   myId = id;
   amHost = isHost;
+  if (pendingJoinName) myName = pendingJoinName; // server confirmed — safe to remember for auto-rejoin on future reconnects
   document.getElementById('lobbyError').textContent = '';
 });
 
@@ -977,8 +1008,13 @@ function syncStickySizes() {
   if (availableWidth <= 0) return;
   const gapNum = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap')) || 7;
   // Dice row = roll button (1 die-width) + its own gap to the slider +
-  // slider (5 die-widths + 4 gaps) = 6 die-widths + 5 gaps total.
-  const dieSize = Math.floor((availableWidth - 5 * gapNum) / 6);
+  // slider (5 die-widths + 4 gaps) = 6 die-widths + 5 gaps total, PLUS
+  // the roll button's extra 2px margin-right (compensating for its
+  // border visually shrinking that specific gap) — has to be budgeted
+  // for here too, or it would push the whole row 2px past the
+  // available width on every render.
+  const ROLL_BTN_EXTRA_MARGIN = 2;
+  const dieSize = Math.floor((availableWidth - 5 * gapNum - ROLL_BTN_EXTRA_MARGIN) / 6);
   if (dieSize <= 0) return;
   document.documentElement.style.setProperty('--die-size', dieSize + 'px');
   document.documentElement.style.setProperty('--cat-col-width', Math.round(dieSize * 2 + 9) + 'px');
@@ -1053,10 +1089,14 @@ function renderPlaying(state) {
   }
 
   // Fresh round -> fresh visual order (a held die's position is
-  // meaningless once its value resets anyway).
+  // meaningless once its value resets anyway), and scroll the
+  // scoresheet back to the top so the new round doesn't start with
+  // the player still scrolled down from where the last round ended.
   if (g.round !== lastRoundForVisualOrder) {
     diceVisualOrder = [0, 1, 2, 3, 4];
     lastRoundForVisualOrder = g.round;
+    const sc = document.querySelector('.scoresheet-container');
+    if (sc) sc.scrollTop = 0;
   }
 
   // Auto-roll the first roll of a fresh round — matching the proven
