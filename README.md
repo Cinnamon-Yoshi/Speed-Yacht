@@ -82,6 +82,56 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.22 — a real, serious reconnection bug, plus three smaller fixes
+
+- **Reconnection bug — the important one.** Reported symptom: during a
+  timer game, a player who got disconnected (minimized the app,
+  backgrounded the tab) and came back would find their dice frozen
+  mid-spin forever, unable to make a selection, and eventually got
+  kicked to the lobby with "game is still running" blocking them from
+  rejoining. Root cause, confirmed by reading the actual reconnection
+  path end to end: the server's `join_lobby` handler has real,
+  correct logic to re-associate a reconnecting socket with a player's
+  existing seat (matched by name) — but that logic only ever runs if
+  `join_lobby` gets emitted, and the client's `connect` handler only
+  ever updated the "Connected" status text. It never told the server
+  who was reconnecting. So `myId` kept pointing at the old, dead
+  socket, the player's game state resolved to nothing, and the UI
+  just stayed exactly where it was when the connection dropped —
+  including mid-roll-animation, permanently. Given enough time, the
+  disconnect grace period would expire and their seat would be
+  removed entirely, matching the "game is still running" lockout
+  exactly. Fixed: the client now remembers its name after a
+  server-confirmed join and automatically re-emits `join_lobby` with
+  it on every reconnect, plus a defensive reset of any stuck
+  roll-animation state as a safety net in case a queued browser timer
+  never fires (a real possibility for a suspended/backgrounded
+  mobile tab). Verified directly: rolled, force-disconnected
+  mid-spin, waited, reconnected, and confirmed the player recovers
+  with accurate state and a working, clickable roll button — not
+  stuck.
+- **Scoresheet still draggable/bouncing horizontally** — found the
+  actual cause this time, not just another band-aid: the scoresheet's
+  scroll container only declared `overflow-y`, and per the CSS spec,
+  leaving the other axis at `visible` while one axis is constrained
+  gets silently computed as `auto` instead — meaning it was likely
+  already implicitly horizontally scrollable, primed to catch any
+  tiny sub-pixel rounding overflow as a draggable gesture. Added an
+  explicit `overflow-x: hidden`. Verified at the worst-case 4-player
+  width: zero overflow, and a forced scroll attempt correctly gets
+  rejected back to 0.
+- **Scroll to top at round start** — added, using the existing
+  round-change detection.
+- **Gap next to the roll button** — confirmed as a real optical
+  effect: the button's bright white border sits right at its edge,
+  making the same numeric gap read as visually tighter than a
+  die-to-die gap. Added a small compensating margin, and adjusted the
+  dynamic width calculation so this doesn't reintroduce any overflow.
+
+Full regression suite (6 files) re-run after all changes — all
+passing, including the join-mechanism suite most relevant to the
+reconnection fix.
+
 ## v1.21 — bots removed, screens merged, real margin fix confirmed
 
 Same four items as last time — this entry documents the actual
