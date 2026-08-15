@@ -165,7 +165,7 @@
   }
   .sc-header .sc-name-col{ padding-left:10px; }
   .sc-header .sc-player-col{ text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .sc-row{ border-bottom:1px solid rgba(255,255,255,0.08); }
+  .sc-row{ border-bottom:1px solid rgba(255,255,255,0.08); padding-right:5px; }
   .sc-row:last-child{ border-bottom:none; }
   .sc-cat-cell{
     padding:0 0 0 10px; font-size:0.76em; font-weight:600; opacity:0.9;
@@ -224,6 +224,8 @@
      beyond the proven baseline, not a port. ===== */
   .rs-list{ width:100%; margin-bottom:8px; }
   .rs-title{ font-size:1.4em; font-weight:800; color:var(--gold); margin-bottom:14px; text-align:center; }
+  #rsIntroState{ margin-top:18px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.12); }
+  #rsIntroState .rs-title{ margin-bottom:0; }
   .rs-row{
     display:grid; grid-template-columns:28% 18% 8% 18% 28%; align-items:center;
     padding:10px 8px; background:rgba(255,255,255,0.05); border-radius:8px;
@@ -343,7 +345,7 @@
     border-radius:0 0 14px 14px; border:1px solid rgba(255,255,255,0.1); border-top:none;
     position:relative;
   }
-  #screenPlaying .scoresheet{ border:none; border-radius:0; overflow:visible; }
+  #screenPlaying .scoresheet{ border:none; border-radius:0; overflow:visible; padding:0; }
 
   .lobby-input{
     width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
@@ -482,7 +484,7 @@
       </div>
       <div class="gi-setting-row"><span>Round Advance:</span>
         <select class="gi-setting-select" id="editAdvance">
-          <option value="When-Ready">When-Ready</option><option value="Full-30" selected>Full-30</option>
+          <option value="When-Ready">When-Ready</option><option value="Full-30" selected>Timer</option>
         </select>
       </div>
       <div class="gi-setting-row"><span>Upper 63 Bonus:</span>
@@ -493,9 +495,6 @@
       </div>
       <div class="gi-setting-row"><span>Yahtzee Bonus (+ea):</span>
         <input type="number" class="gi-setting-input" id="editYahtzeeBonus" value="100">
-      </div>
-      <div class="gi-setting-row"><span>Fill empty seats with bots:</span>
-        <div class="toggle" id="editBotsToggle"><div class="knob"></div></div>
       </div>
       <div class="gi-setting-row gi-desc-row">
         <span>Description (optional):</span>
@@ -534,8 +533,11 @@
   </div>
 
   <!-- Round Summary — two sub-states: 'summary' shows the scores-played
-       list, 'intro' replaces it with "…and now Round X of 13", matching
-       the proven design's two-phase transition rather than one. -->
+       list, and 'intro' ADDS "…and now Round X of 13" below it, on the
+       SAME screen — per Denver's explicit request, this deliberately
+       diverges from the proven design (which replaces the list with
+       the intro on a second screen); here the table stays visible
+       throughout, with the intro message simply appended beneath it. -->
   <div class="screen" id="screenRoundSummary">
     <div id="rsSummaryState">
       <div class="rs-title">Scores played that round:</div>
@@ -610,7 +612,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.20';
+const APP_VERSION = '1.21';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -685,10 +687,6 @@ document.getElementById('acceptBtn').onclick = () => {
   document.getElementById('acceptBtn').textContent = 'Waiting on others…';
 };
 document.getElementById('editAgainBtn').onclick = () => socket.emit('host_edit_again');
-document.getElementById('editBotsToggle').onclick = function(){
-  this.classList.toggle('on');
-  emitLiveSettings();
-};
 ['editRolls','editAdvance','editUpperBonus','editFirstYahtzee','editYahtzeeBonus'].forEach(id => {
   document.getElementById(id).onchange = emitLiveSettings;
 });
@@ -725,7 +723,6 @@ function populateEditForm(settings){
   document.getElementById('editUpperBonus').value = settings.upperBonus;
   document.getElementById('editFirstYahtzee').value = settings.firstYahtzee;
   document.getElementById('editYahtzeeBonus').value = settings.yahtzeeBonus;
-  document.getElementById('editBotsToggle').classList.toggle('on', !!settings.fillWithBots);
   document.getElementById('editDescription').value = settings.description || '';
   syncSettingSelectWidths();
 }
@@ -737,7 +734,6 @@ function emitLiveSettings(){
     upperBonus: parseInt(document.getElementById('editUpperBonus').value, 10) || 0,
     firstYahtzee: parseInt(document.getElementById('editFirstYahtzee').value, 10) || 0,
     yahtzeeBonus: parseInt(document.getElementById('editYahtzeeBonus').value, 10) || 0,
-    fillWithBots: document.getElementById('editBotsToggle').classList.contains('on'),
     description: document.getElementById('editDescription').value
   });
 }
@@ -745,11 +741,10 @@ function emitLiveSettings(){
 function renderSettingsReadout(settings){
   return `
     <div class="gi-setting-row"><span>Rolls per turn:</span><span class="gi-setting-value">${settings.rollsPerTurn}</span></div>
-    <div class="gi-setting-row"><span>Round Advance:</span><span class="gi-setting-value">${settings.roundAdvance}</span></div>
+    <div class="gi-setting-row"><span>Round Advance:</span><span class="gi-setting-value">${settings.roundAdvance === 'Full-30' ? 'Timer' : settings.roundAdvance}</span></div>
     <div class="gi-setting-row"><span>Upper 63 Bonus:</span><span class="gi-setting-value">${settings.upperBonus}</span></div>
     <div class="gi-setting-row"><span>1st Yahtzee Score:</span><span class="gi-setting-value">${settings.firstYahtzee}</span></div>
     <div class="gi-setting-row"><span>Yahtzee Bonus (+ea):</span><span class="gi-setting-value">${settings.yahtzeeBonus}</span></div>
-    <div class="gi-setting-row"><span>Fill seats with bots:</span><span class="gi-setting-value">${settings.fillWithBots ? 'On' : 'Off'}</span></div>
     ${settings.description ? `<div class="gi-setting-row"><span>Description:</span></div><div style="font-size:0.82em;opacity:0.8;margin-top:-4px;">${settings.description}</div>` : ''}
   `;
 }
@@ -1330,18 +1325,18 @@ function renderScoresheet(state) {
 function renderRoundSummary(state) {
   const g = state.game;
 
+  // Table stays visible throughout both phases — only the intro
+  // message below it toggles. (Denver's explicit request: keep the
+  // scores table up rather than replacing it with the intro message,
+  // diverging from the proven design's two-screen approach.)
+  document.getElementById('rsIntroState').style.display = g.roundPhase === 'intro' ? '' : 'none';
   if (g.roundPhase === 'intro') {
-    document.getElementById('rsSummaryState').style.display = 'none';
-    document.getElementById('rsIntroState').style.display = '';
     // Server doesn't increment `round` until this phase finishes — the
     // displayed number here is always "what's coming next", not the
     // live authoritative round.
     document.getElementById('rsIntroTitle').textContent = `…and now Round ${g.round + 1} of ${g.totalRounds}`;
-    return;
   }
 
-  document.getElementById('rsSummaryState').style.display = '';
-  document.getElementById('rsIntroState').style.display = 'none';
   const summary = (g.roundSummary || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('roundSummaryList').innerHTML = summary.map(entry => {
     if (!entry.key) {
