@@ -82,6 +82,59 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.18 — six real fixes from screenshot feedback, one honest non-fix
+
+You sent side-by-side screenshots this time, which made a couple of
+these very easy to confirm precisely against the reference's actual
+CSS values rather than eyeballing.
+
+- **Player names duplicated** — confirmed in the screenshot: names
+  appeared once above the timer (correct, matches the reference) AND
+  again as a repeated header row inside the scoresheet itself (which
+  doesn't exist in the reference at all). Removed the scoresheet's own
+  duplicate header entirely.
+- **First roll not auto-triggered** — the proven design auto-rolls the
+  opening dice once the round's intro/timer settles, rather than
+  requiring a manual first click. That behavior never existed in the
+  server build at all. Added it: in Full-30 mode it fires once the 3s
+  buildup completes (matching the reference's timing exactly), in
+  When-Ready mode (no timer bar) after a short fixed delay so it
+  doesn't feel instant. Verified end-to-end: `rollsUsed` reaches 1
+  with zero manual clicks sent.
+- **Columns misaligned + excess side margins** — same root cause,
+  confirmed and fixed together. `--die-size` was a static 56px
+  assumption; on any viewport wider than that happened to exactly fit,
+  both the dice row and the scoresheet ended up narrower than the
+  available space. Ported the proven design's actual approach: measure
+  the real available width and compute `--die-size` (and everything
+  derived from it) to fill it, recomputed on resize. Both the dice row
+  and the scoresheet now scale together instead of independently
+  guessing.
+- **Score fonts didn't match** — confirmed precisely against the
+  reference's CSS: current-round picks should be 1.65em/weight 900,
+  older picks 1.1em/weight 400 — mine used a flat 0.85em for both,
+  with no size distinction at all between "just picked" and "older."
+  Fixed both sizes, plus the live pickable-preview number, to match
+  exactly.
+- **Category icons too small** — confirmed against the reference's
+  exact values: solo mini-die 28px→32px, trophy 1.3em→1.6em, chance
+  mark 1.5em→1.8em. All three were undersized; fixed to match exactly.
+- **Bots still not filling despite being selected** — not fixed this
+  round, and I want to be direct about why rather than leave it
+  ambiguous: bots remain deliberately gated behind an `ENABLE_BOTS`
+  server env var that isn't set in normal deployment, because last
+  session's testing found a real, unresolved reliability issue (one
+  full game completed correctly, a near-identical run under slightly
+  different timing hung indefinitely with no confirmed root cause).
+  The Edit-screen toggle currently doesn't reflect this — turning it
+  on has no effect, silently. That's a real gap worth fixing (either
+  hide/disable the toggle until bots are trustworthy, or finish
+  debugging bots properly), just not something to rush into this
+  batch alongside six other fixes.
+
+Full regression suite (6 files) re-run after all six fixes — all
+passing.
+
 ## v1.17 — seven specific reported bugs, all fixed and verified
 
 - **Total row wasn't sticky** — `.scoresheet` had `overflow:hidden`,
