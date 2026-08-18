@@ -82,6 +82,52 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.23 — full-bleed layout redesign, no more black bars or wasted margins
+
+- **Black background bars on shorter screens** — confirmed real:
+  `.phone` only had natural, content-driven height on every screen
+  except Playing, so a screen with little content (like Round Summary)
+  left the dark body background (`#111`, near-black) showing through
+  below it. Fixed by making the body itself match the app's green
+  (`--bg`) and giving `.phone` `min-height: 100vh`, so there's no
+  scenario where anything but green is visible. Verified directly: the
+  Round Summary screen (the exact one in the screenshot) now fills the
+  full viewport with green all the way down.
+- **Wasted space on the sides, whole layout redesigned to be full-
+  bleed.** The old structure double-padded everything — the body had
+  its own outer padding, then a `max-width: 430px` wrap on top of
+  that, then `.phone` had its own separate padding again — and capped
+  the whole app at 430px regardless of actual device width. Removed
+  the outer body padding and the wrap constraint entirely; `.phone`
+  now spans the full viewport edge to edge, with only its own 16px
+  padding keeping content (dice, header text, everything) inset from
+  the true screen edge rather than floating in a black margin.
+  Because die size is already computed dynamically from available
+  width (from a previous session), this alone made dice measurably
+  larger without any hardcoded size change — verified directly: on a
+  390px-wide viewport, removing the old double-padding gained 20px of
+  real usable width, and the die-size formula correctly picked that up
+  (50px → 53px). Also adjusted the Playing screen's fixed-height calc,
+  which had assumed 32px of now-removed outer padding.
+- **Roll button's gap to die 1** — the button's border sits right at
+  its edge, so a couple of extra px of margin were added there
+  specifically, and the width-budgeting math was updated so this
+  doesn't reintroduce any overflow.
+- **Header text touching the edges** — verified directly with the new
+  layout: the header now sits inset exactly 16px from both the left
+  and right true screen edges, matching the padding everywhere else,
+  not running off.
+- Verified the full combination with real browser measurements (not
+  just visual inspection): body background color, phone height vs.
+  viewport height, die size, last-die position vs. phone edge, header
+  left/right position, and body scrollWidth vs. clientWidth (still
+  zero overflow with the larger dice) — plus real screenshots of both
+  the Playing screen and the Round Summary screen for direct visual
+  confirmation.
+
+Full regression suite (6 files) re-run after all changes — all
+passing.
+
 ## v1.22 — a real, serious reconnection bug, plus three smaller fixes
 
 - **Reconnection bug — the important one.** Reported symptom: during a
