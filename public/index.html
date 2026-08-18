@@ -25,13 +25,24 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   html{ overflow-x:hidden; width:100%; }
   body{
-    margin:0; background:#111; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-    color:#fff; display:flex; justify-content:center; padding:16px 10px 60px; min-height:100vh;
+    margin:0; background:var(--bg); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+    color:#fff; display:flex; justify-content:center;
+    padding:0; min-height:100vh;
     overflow-x:hidden; /* known iOS Safari quirk: overflow-x:hidden on body alone often isn't enough to actually prevent scrolling — html needs it too */
     width:100%;
   }
-  .wrap{max-width:430px;width:100%;}
-  .phone{ background:var(--bg); border-radius:20px; padding:16px; }
+  /* Generous cap so this doesn't stretch absurdly wide on a tablet or
+     desktop browser — on an actual phone this never kicks in, width
+     just fills naturally. */
+  .wrap{max-width:600px;width:100%;}
+  .phone{
+    background:var(--bg); padding:16px; min-height:100vh;
+    /* No outer body padding and no wrap margin now — .phone IS the
+       full-bleed background, edge to edge, matching a native app
+       rather than a "phone mockup floating in a black void". Its own
+       16px padding is what keeps content (title, dice, text) from
+       actually touching the true screen edge. */
+  }
   /* Single header row used everywhere — title left, version right, ONE
      instance total. Previously this was duplicated (once under the
      title, once again on the Playing screen), which is exactly the
@@ -338,7 +349,7 @@
      screens keep their normal natural-flow page scrolling, which they
      were built around and which changing globally would have broken. */
   .phone.playing-mode{
-    height:calc(100dvh - 32px); max-height:840px; overflow:hidden;
+    height:100dvh; max-height:840px; overflow:hidden;
     display:flex; flex-direction:column;
   }
   #screenPlaying.active{
@@ -617,7 +628,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.22';
+const APP_VERSION = '1.23';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
