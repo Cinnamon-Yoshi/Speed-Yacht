@@ -628,7 +628,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.26';
+const APP_VERSION = '1.27';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -951,7 +951,13 @@ let lastTimerRoundEndsAt = null;
 let timerBuildupStartedAt = null;
 
 function requestRoll(retryCount) {
-  retryCount = retryCount || 0;
+  // Strict type check, not a loose truthy default — any accidental
+  // caller passing a click Event (or any other truthy non-number) must
+  // still be treated as a fresh call (retryCount 0), not silently
+  // misread as a nonzero retry that skips the setup below entirely.
+  // Confirmed this exact mistake happened via rollBtn.onclick = requestRoll
+  // passing the click event straight through.
+  retryCount = (typeof retryCount === 'number') ? retryCount : 0;
   if (retryCount === 0) {
     if (isRollingLocally) return;
     const st = latestState;
@@ -1229,7 +1235,7 @@ function renderPlaying(state) {
     // then the actual roll count — not a countdown of rolls remaining.
     const displayNum = myG.rollsUsed === 0 ? 1 : myG.rollsUsed;
     rollBtn.innerHTML = `<span class="rl-label">ROLL</span><span class="rl-num-single">${displayNum}</span>`;
-    rollBtn.onclick = requestRoll;
+    rollBtn.onclick = () => requestRoll(); // NEVER pass the click event through — requestRoll's retryCount parameter would misinterpret any truthy argument (including a click Event) as a nonzero retry count and skip the setup that triggers the visual spin entirely
   }
 
   renderScoresheet(state);
