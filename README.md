@@ -82,6 +82,43 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.28 — a real gap in my testing approach, and a new recovery path
+
+Good news: the animation regression from v1.26 is confirmed fixed on
+your end. The home-screen reconnection issue is not.
+
+I need to flag something about my own testing here rather than just
+describe another fix. Every recovery test I've run across the last
+several versions used Chrome DevTools' page-lifecycle "frozen" state
+to simulate backgrounding. Testing this specific fix, I discovered
+that mechanism does NOT reliably trigger the browser's actual
+`visibilitychange` event — the standard API real backgrounding is
+supposed to fire. That means my testing tool has had a real blind
+spot around exactly the scenario you keep hitting: everything I could
+verify with it kept passing, while the real thing you're testing on
+an actual phone kept failing. That's on me, and it explains why the
+last two "fixes" didn't hold up.
+
+What's new: a `visibilitychange` listener, independent of whatever
+socket.io's own reconnection logic is doing. The moment the tab is
+actually looked at again, it immediately clears any stuck roll
+animation (a real roll only ever takes ~750ms — if one is still
+"in progress" right as the page becomes visible again, it did not
+survive the background period, full stop) and re-syncs from current
+state, rather than waiting on retry timers that themselves depend on
+JS timers that may not have fired reliably while backgrounded. I
+verified the handler's own logic directly (by dispatching the event
+manually, since CDP can't trigger it naturally) and confirmed it
+correctly clears a stuck state immediately rather than waiting on the
+old multi-second retry cycle.
+
+I want to be direct: I cannot fully verify this against a true
+backgrounding scenario in this environment, for the reason above. This
+needs a real test on your actual device to know whether it holds.
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
 ## v1.27 — found the actual bug: I broke the roll button in v1.26
 
 Your second detail — "dice roll animation was turned off (broken) on
