@@ -82,6 +82,37 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.31 — the long-press was probably the problem, so it's gone
+
+Asked again where to find the log, which is a fair sign the long-press
+gesture from v1.30 wasn't actually working — long-press on mobile is
+genuinely unreliable (the browser's native text-selection/copy menu
+can intercept it, and small finger movement during the hold cancels it
+via touchmove). Replaced it entirely with a small, plain "log" link
+next to the version number — a direct tap, nothing held, no gesture to
+get right. Verified it opens with a single click/tap on the Lobby
+screen before even joining a game.
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
+## v1.30 — the diagnostic log was actually inaccessible most of the time
+
+Real gap in v1.29: the log-viewing gesture was only attached to the
+"stuck? tap here" link, which is hidden by default and only shows up
+while actively stuck. The moment it resolves (on its own, or via the
+recover tap), the link disappears again — meaning there was no way to
+actually go look at what happened afterward, which defeats the point.
+
+Moved it to the version number in the header instead — that's visible
+on every screen, at all times, whether or not anything is currently
+stuck. Tap-and-hold it (long-press, ~0.7s) or right-click on desktop
+to see the log. Verified directly: confirmed it's reachable even on
+the plain Lobby screen before joining a game, not just mid-play.
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
 ## v1.29 — changed strategy: a manual escape hatch instead of another guess
 
 Four attempts in a row at automatically detecting and fixing this
