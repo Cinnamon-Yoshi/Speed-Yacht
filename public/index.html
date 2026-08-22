@@ -68,6 +68,10 @@
   .hb-cell{ text-align:center; font-weight:800; font-size:0.85em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   .timer-row{ margin:0 0 10px; }
+  .stuck-recover-link{
+    text-align:center; font-size:0.72em; color:var(--gold); opacity:0.75;
+    padding:4px 0 2px; cursor:pointer; text-decoration:underline;
+  }
   .timer-track{ width:100%; height:8px; background:rgba(255,255,255,0.1); border-radius:4px; overflow:hidden; display:flex; justify-content:flex-end; }
   .timer-fill{ height:100%; width:100%; background:var(--gold); border-radius:4px; transition:width 1s linear, background-color 1s linear; }
   .timer-fill.low{ background:#e01010; }
@@ -541,6 +545,7 @@
       <div class="timer-row" id="timerRow" style="display:none;">
         <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
       </div>
+      <div class="stuck-recover-link" id="stuckRecoverLink" style="display:none;">Dice stuck? Tap here to reconnect</div>
     </div>
 
     <div class="scoresheet-container">
@@ -628,7 +633,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.28';
+const APP_VERSION = '1.29';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -637,6 +642,20 @@ document.getElementById('appVersion').textContent = 'v' + APP_VERSION;
 
 const socket = io();
 let myId = null;
+
+// Lightweight diagnostic trail — a handful of past reconnection-related
+// bugs have all been impossible to reproduce or verify in testing (no
+// sandbox tool available accurately simulates real mobile
+// backgrounding), so the only way to actually diagnose the next
+// occurrence is to have real data FROM it. Keeps the last 40 key
+// events with timestamps; tap-and-hold the stuck-recover link to see
+// them. Not sent anywhere — purely so a person can read/relay it.
+const diagLog = [];
+function diag(msg) {
+  diagLog.push(`${new Date().toISOString().slice(11, 23)} ${msg}`);
+  if (diagLog.length > 40) diagLog.shift();
+}
+document.addEventListener('visibilitychange', () => diag(`visibilitychange -> ${document.visibilityState}`));
 let myName = null; // set on the FIRST successful join, then reused to auto-rejoin on every reconnect (see socket.on('connect') below) — without this, a reconnecting socket is a total stranger to the server, which has no way to re-associate it with the player's existing seat
 let amHost = false;
 let editFormPopulated = false;
@@ -651,6 +670,7 @@ function showScreen(id){
 }
 
 socket.on('connect', () => {
+  diag(`socket connect (id=${socket.id}), myName=${myName}, isRollingLocally-before-reset=${isRollingLocally}`);
   document.getElementById('connDot').classList.add('connected');
   document.getElementById('connText').textContent = 'Connected';
   // CRITICAL for reconnection: the server's join_lobby handler has real
@@ -676,10 +696,14 @@ socket.on('connect', () => {
     rollServerDataReady = false;
   }
 });
-socket.on('disconnect', () => {
+socket.on('disconnect', (reason) => {
+  diag(`socket disconnect, reason=${reason}, isRollingLocally=${isRollingLocally}`);
   document.getElementById('connDot').classList.remove('connected');
   document.getElementById('connText').textContent = 'Disconnected — reconnecting…';
 });
+socket.on('connect_error', (err) => diag(`connect_error: ${err && err.message}`));
+socket.on('reconnect_attempt', (n) => diag(`reconnect_attempt #${n}`));
+socket.on('reconnect_failed', () => diag('reconnect_failed (gave up)'));
 
 // Returning from the home screen / another app is a much stronger and
 // more immediate signal than anything socket.io's own reconnection
@@ -693,6 +717,7 @@ socket.on('disconnect', () => {
 // the socket connection itself claims to be in.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
+  diag(`visible-handler: connected=${socket.connected}, isRollingLocally-before=${isRollingLocally}`);
   // A real roll only ever takes ~750ms — if we're still "mid-roll"
   // right as the page becomes visible again, that roll did not
   // survive whatever just happened while backgrounded. Don't wait on
@@ -721,6 +746,45 @@ document.addEventListener('visibilitychange', () => {
     if (myName) socket.emit('join_lobby', myName); // cheap and idempotent server-side if already the current player; cheap insurance if the seat needs re-matching
   }
 });
+
+// Independent, always-on watchdog for the stuck-recover link — checks
+// on a plain interval rather than relying on any of the above actually
+// firing correctly (repeated real-world failures despite several
+// targeted fixes mean this can no longer assume its own detection
+// logic is reliable). Surfaces a manual escape hatch the player can
+// use themselves regardless of what's actually going wrong underneath.
+let rollingStuckSince = null;
+setInterval(() => {
+  const link = document.getElementById('stuckRecoverLink');
+  if (!link) return;
+  if (isRollingLocally) {
+    if (!rollingStuckSince) rollingStuckSince = Date.now();
+    if (Date.now() - rollingStuckSince > 3500) link.style.display = '';
+  } else {
+    rollingStuckSince = null;
+    link.style.display = 'none';
+  }
+}, 500);
+
+document.getElementById('stuckRecoverLink').addEventListener('click', () => {
+  diag('MANUAL RECOVER tapped');
+  isRollingLocally = false;
+  rollAnimTimerFired = false;
+  rollServerDataReady = false;
+  document.getElementById('stuckRecoverLink').style.display = 'none';
+  try { socket.disconnect(); } catch (e) {}
+  socket.connect();
+  if (latestState) handleStateUpdate(latestState);
+});
+document.getElementById('stuckRecoverLink').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  alert(diagLog.join('\n') || 'No diagnostic events logged yet.');
+});
+let recoverLinkPressTimer = null;
+document.getElementById('stuckRecoverLink').addEventListener('touchstart', () => {
+  recoverLinkPressTimer = setTimeout(() => alert(diagLog.join('\n') || 'No diagnostic events logged yet.'), 700);
+});
+document.getElementById('stuckRecoverLink').addEventListener('touchend', () => clearTimeout(recoverLinkPressTimer));
 
 let pendingJoinName = null; // the name just attempted — committed to myName only once the server confirms via 'joined', not optimistically on click
 document.getElementById('joinBtn').onclick = () => {
@@ -1000,6 +1064,7 @@ function requestRoll(retryCount) {
   // Confirmed this exact mistake happened via rollBtn.onclick = requestRoll
   // passing the click event straight through.
   retryCount = (typeof retryCount === 'number') ? retryCount : 0;
+  diag(`requestRoll(retryCount=${retryCount}) called, isRollingLocally=${isRollingLocally}, connected=${socket.connected}`);
   if (retryCount === 0) {
     if (isRollingLocally) return;
     const st = latestState;
@@ -1210,12 +1275,14 @@ function renderPlaying(state) {
   const roundHasEnoughTimeForAutoRoll = !g.roundEndsAt || (g.roundEndsAt - Date.now()) > 5000;
   if (g.round !== lastAutoRolledRound && myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally && roundHasEnoughTimeForAutoRoll) {
     lastAutoRolledRound = g.round;
+    diag(`auto-roll SCHEDULED for round ${g.round}, delay=${g.roundEndsAt ? 3000 : 600}`);
     const autoRollDelay = g.roundEndsAt ? 3000 : 600;
     setTimeout(() => {
       const st = latestState;
       if (!st || !st.game || st.game.gameOver) return;
       if (st.game.round !== g.round || st.game.roundPhase !== 'playing') return; // round already moved on
       const freshG = st.game.players[myId];
+      diag(`auto-roll TIMER FIRED for round ${g.round}, still valid=${!!(freshG && freshG.rollsUsed === 0 && !freshG.doneThisRound && !isRollingLocally)}`);
       if (freshG && freshG.rollsUsed === 0 && !freshG.doneThisRound && !isRollingLocally) requestRoll();
     }, autoRollDelay);
   }
