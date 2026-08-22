@@ -82,6 +82,80 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.25 — an honest non-fix: couldn't reproduce it, added a safety net instead
+
+You confirmed v1.24, minimized (not closed) for ~25 seconds after
+already picking your category, and came back to dice spinning forever
+— unable to make a play.
+
+I threw a lot at trying to reproduce this precisely, using Chrome's
+real page-lifecycle "frozen" state (which genuinely throttles JS
+timers and lets the server's keep-alive pings time out, unlike a
+scripted `disconnect()` call): picking a category then freezing for
+25s with a round transition happening underneath, freezing right at
+the tail end of a round's timer specifically to try to force the
+auto-roll feature to collide with a second round transition, disabling
+the network mid-roll to try to strand the resolution logic — six
+different constructions in total. Every one of them recovered
+correctly. I don't have a confirmed root cause, and I want to be
+upfront about that rather than claim I fixed something I can't
+actually verify.
+
+What I did add: a watchdog on the roll animation. If it's still
+spinning more than a few seconds after being triggered — for
+whatever reason, reconnect-related or not — it now force-resolves
+using the latest known state rather than staying stuck indefinitely.
+This doesn't explain what happened, but it makes sure it can't
+strand a player's turn regardless of the cause. Also added a related
+safety check: the auto-roll feature now skips itself entirely if a
+round's timer is already down to its last few seconds when the client
+catches up (most relevant right after a reconnect) — auto-rolling
+into a round that's about to end anyway was a plausible contributor
+worth closing off even without a confirmed reproduction.
+
+If this happens again, the two most useful things to note are (1)
+whether it was Full-30/Timer mode or When-Ready, and (2) whether it
+resolves on its own after a few seconds now (watchdog working) or
+stays stuck (the underlying cause is still there and needs more
+digging).
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
+## v1.24 — the actual gap behind "closing the app broke things"
+
+Last session's reconnection fix (v1.22) covered a socket dropping and
+reconnecting within the same page load — verified that works. But
+"closing the app and rejoining" is a different, harder case: a
+genuinely fresh page load, where every client-side variable resets.
+Tested that exact scenario directly (close, reopen, manually retype
+the name and rejoin) and it actually worked correctly too — the
+server's name-matching reconnect logic doesn't care whether the
+client remembered anything, since the player is re-announcing
+themselves manually either way.
+
+So where the real gap was: the **pre-game grace period** — the window
+a disconnected player's seat stays reserved before the server gives up
+and removes it — defaulted to 5 seconds. That's nowhere near enough
+time for a real app close-and-reopen cycle (backgrounding, OS
+app-switching, a fresh page load, a new WebSocket handshake). Confirmed
+by direct reproduction: disconnect during setup, wait past 5 seconds
+while the host proceeds with settings/accept, then try to rejoin —
+seat's already gone, and since the game has moved past the 'lobby'
+phase, the response is exactly "Joining is locked — the host has
+already started setting up this game," matching the report precisely.
+
+Increased the default to 30 seconds — genuine headroom for a real
+reconnect, while still well short of the 60s window used once actual
+gameplay is underway (nothing irreversible has happened pre-game, so
+there's less urgency than mid-round). Verified directly: the same
+reproduction scenario, now waiting a realistic amount of time, results
+in a clean rejoin with the seat and phase both correctly preserved.
+
+Full regression suite (6 files) re-run after the change — all passing,
+including the join-mechanism suite most relevant here (which uses its
+own short test-only override, unaffected by the new default).
+
 ## v1.23 — full-bleed layout redesign, no more black bars or wasted margins
 
 - **Black background bars on shorter screens** — confirmed real:

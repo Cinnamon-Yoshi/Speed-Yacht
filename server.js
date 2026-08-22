@@ -108,7 +108,17 @@ const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 60000
 // no scores to lose), so there's no good reason to let the room sit in
 // a non-'lobby' phase, invisibly blocking new joins with "Joining is
 // locked," for up to a full minute after everyone's actually left.
-const LOBBY_RECONNECT_GRACE_MS = parseInt(process.env.LOBBY_RECONNECT_GRACE_MS, 10) || 5000;
+// 30s, not the original 5s — 5 seconds is not remotely enough time for
+// a REAL app close-and-reopen cycle on a real phone (backgrounding,
+// OS app-switching, a fresh page load, re-establishing the WebSocket
+// handshake) — confirmed via direct testing that 5s reliably locks a
+// legitimate player out with "the host has already started setting up
+// this game" the moment anyone else proceeds with settings/accept
+// while they're briefly away. Kept shorter than the 60s used during
+// active play since nothing irreversible has happened yet pre-game,
+// but needs real headroom for a genuine reconnect, not just a network
+// blip.
+const LOBBY_RECONNECT_GRACE_MS = parseInt(process.env.LOBBY_RECONNECT_GRACE_MS, 10) || 30000;
 
 function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
