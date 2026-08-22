@@ -82,6 +82,39 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.29 — changed strategy: a manual escape hatch instead of another guess
+
+Four attempts in a row at automatically detecting and fixing this
+haven't held up on your actual phone, and I have no way to reproduce
+the real failure in this environment. Continuing to ship guesses isn't
+fair to you, so this version does something different: it doesn't try
+to be clever about automatic detection at all.
+
+A small "Dice stuck? Tap here to reconnect" link now appears on the
+Playing screen on its own, checked by a plain always-running timer
+that doesn't depend on any of the other reconnection logic actually
+working — if a roll has been "in progress" for more than 3.5 seconds
+(a real roll only ever takes ~750ms), it shows up. Tapping it does a
+hard reset: fully disconnects and reconnects the socket, clears every
+animation flag, and re-syncs from whatever the server currently says
+is true. This doesn't depend on me having correctly guessed why it got
+stuck — it just gets you unstuck.
+
+Also added: a lightweight diagnostic trail. The last 40 key events
+(connects, disconnects, reconnect attempts, every roll request, every
+auto-roll schedule/fire, visibility changes) get timestamped and kept
+in memory. Tap-and-hold (or right-click on desktop) the recover link
+to see them. If this happens again, that log — even just read aloud or
+photographed — would finally give me real data instead of another
+blind guess.
+
+I'm not claiming this fixes the underlying cause. I don't know what it
+is yet. This is a safety net so a real game night isn't blocked by it
+while I keep working on the actual root cause with better information.
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
 ## v1.28 — a real gap in my testing approach, and a new recovery path
 
 Good news: the animation regression from v1.26 is confirmed fixed on
