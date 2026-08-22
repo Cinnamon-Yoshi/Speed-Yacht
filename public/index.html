@@ -628,7 +628,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.24';
+const APP_VERSION = '1.25';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -969,6 +969,21 @@ function requestRoll() {
     rollAnimTimerFired = true;
     tryFinishRollAnim();
   }, ROLL_ANIM_MS);
+  // Watchdog: the animation should always resolve within ~750ms of
+  // both conditions being met. If it's SOMEHOW still spinning several
+  // seconds later — a dropped response after a reconnect, a missed
+  // state_update, any edge case that isn't fully understood yet —
+  // force it to resolve anyway rather than leave the player stuck
+  // staring at dice that will never settle. This doesn't fix whatever
+  // caused it, but it guarantees the player is never permanently
+  // locked out of taking their turn because of it.
+  const watchdogRollsUsedBefore = rollsUsedBeforeThisRoll;
+  setTimeout(() => {
+    if (isRollingLocally && rollsUsedBeforeThisRoll === watchdogRollsUsedBefore) {
+      isRollingLocally = false;
+      if (latestState) renderPlaying(latestState);
+    }
+  }, 4000);
 }
 
 function tryFinishRollAnim() {
@@ -1116,7 +1131,17 @@ function renderPlaying(state) {
   // Full-30 mode waits for the same 3s the buildup animation takes;
   // When-Ready mode (no timer bar at all) uses a short fixed delay so
   // it doesn't feel instant/jarring.
-  if (g.round !== lastAutoRolledRound && myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally) {
+  //
+  // Skip entirely if the round's own timer doesn't leave enough room
+  // for the auto-roll to fire and still give the player a couple
+  // seconds to actually act — most likely to matter after catching up
+  // from a reconnect, where the "fresh" round the client just learned
+  // about might already be most of the way through its real timer.
+  // Auto-rolling into a round that's about to end anyway is pointless
+  // at best; at worst it's a spin animation for a round that's already
+  // moving on, right as the client is also trying to catch up.
+  const roundHasEnoughTimeForAutoRoll = !g.roundEndsAt || (g.roundEndsAt - Date.now()) > 5000;
+  if (g.round !== lastAutoRolledRound && myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally && roundHasEnoughTimeForAutoRoll) {
     lastAutoRolledRound = g.round;
     const autoRollDelay = g.roundEndsAt ? 3000 : 600;
     setTimeout(() => {
