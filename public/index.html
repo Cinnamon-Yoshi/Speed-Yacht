@@ -628,7 +628,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.25';
+const APP_VERSION = '1.26';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -950,36 +950,55 @@ let lastAutoRolledRound = null;
 let lastTimerRoundEndsAt = null;
 let timerBuildupStartedAt = null;
 
-function requestRoll() {
-  if (isRollingLocally) return;
-  const st = latestState;
-  if (!st || !st.game) return;
-  const myG = st.game.players[myId];
-  if (!myG || myG.doneThisRound) return;
-  if (myG.rollsUsed >= st.settings.rollsPerTurn) return;
+function requestRoll(retryCount) {
+  retryCount = retryCount || 0;
+  if (retryCount === 0) {
+    if (isRollingLocally) return;
+    const st = latestState;
+    if (!st || !st.game) return;
+    const myG = st.game.players[myId];
+    if (!myG || myG.doneThisRound) return;
+    if (myG.rollsUsed >= st.settings.rollsPerTurn) return;
 
-  isRollingLocally = true;
-  rollAnimTimerFired = false;
-  rollServerDataReady = false;
-  triggerHaptic();
-  rollsUsedBeforeThisRoll = myG.rollsUsed;
-  renderPlaying(st); // immediately show the spin, before the server even responds
+    isRollingLocally = true;
+    rollAnimTimerFired = false;
+    rollServerDataReady = false;
+    triggerHaptic();
+    rollsUsedBeforeThisRoll = myG.rollsUsed;
+    renderPlaying(st); // immediately show the spin, before the server even responds
+  }
   socket.emit('roll_dice');
   setTimeout(() => {
     rollAnimTimerFired = true;
     tryFinishRollAnim();
   }, ROLL_ANIM_MS);
   // Watchdog: the animation should always resolve within ~750ms of
-  // both conditions being met. If it's SOMEHOW still spinning several
-  // seconds later — a dropped response after a reconnect, a missed
-  // state_update, any edge case that isn't fully understood yet —
-  // force it to resolve anyway rather than leave the player stuck
-  // staring at dice that will never settle. This doesn't fix whatever
-  // caused it, but it guarantees the player is never permanently
-  // locked out of taking their turn because of it.
+  // both conditions being met. If it's SOMEHOW still stuck several
+  // seconds later — most likely the roll_dice emit or its response got
+  // lost around a disconnect (e.g. returning from the home screen
+  // right as a new round's auto-roll fires) — don't just declare it
+  // done with stale pre-roll data (dice still showing all-1s, rollsUsed
+  // still 0, nothing pickable — confirmed via testing that this is
+  // exactly what silently forcing isRollingLocally=false here used to
+  // produce). Retry the roll a couple of times first, and only while
+  // actually connected — if we're disconnected, the socket.on('connect')
+  // handler already resets this state and re-renders once reconnection
+  // genuinely succeeds, so retrying blind into a dead connection would
+  // just waste attempts.
   const watchdogRollsUsedBefore = rollsUsedBeforeThisRoll;
   setTimeout(() => {
-    if (isRollingLocally && rollsUsedBeforeThisRoll === watchdogRollsUsedBefore) {
+    if (!isRollingLocally || rollsUsedBeforeThisRoll !== watchdogRollsUsedBefore) return; // already resolved normally, or a newer roll superseded this one
+    if (socket.connected && retryCount < 3) {
+      requestRoll(retryCount + 1);
+    } else if (!socket.connected) {
+      // Leave isRollingLocally as-is — don't render stale data over
+      // the spin. socket.on('connect') will clean this up once we're
+      // actually back online.
+    } else {
+      // Genuinely exhausted retries while connected — this shouldn't
+      // normally happen, but resolving to the current real state (even
+      // if it still shows no roll yet) is safer than leaving the UI
+      // permanently locked with the roll button disabled.
       isRollingLocally = false;
       if (latestState) renderPlaying(latestState);
     }
