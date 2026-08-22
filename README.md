@@ -82,6 +82,46 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.27 — found the actual bug: I broke the roll button in v1.26
+
+Your second detail — "dice roll animation was turned off (broken) on
+all devices after the initial first auto roll" — was the one that
+cracked this open. That's not a reconnection issue at all; it's a
+plain regression I introduced in v1.26.
+
+`rollBtn.onclick = requestRoll` passes the click event as
+`requestRoll`'s first argument. v1.26 added a `retryCount` parameter
+to that same function, defaulted with `retryCount = retryCount || 0`.
+A click event is a truthy object, so every single manual roll click
+was silently being read as a nonzero retry count — which skips the
+entire block that sets `isRollingLocally = true` and actually shows
+the spin. The dice still updated once the server responded (so it
+"worked", technically), just with zero animation, for every roll after
+the first auto-roll (which was the one call site that correctly passed
+no arguments). That matches exactly what you saw.
+
+It also very plausibly explains the still-stuck-spinning report: with
+that bug in place, clicking the roll button while a roll was already
+stuck (e.g. mid-reconnect) skipped the `if (isRollingLocally) return`
+guard too — since that guard was inside the same now-skipped block —
+letting a frustrated retry tap fire a second overlapping roll instead
+of being safely ignored.
+
+Fixed the actual bug (wrapped the click handler so the event is never
+passed through) and hardened `requestRoll` itself against the same
+class of mistake (strict type check instead of a truthy default, so
+any future accidental event-as-argument can't silently misfire this
+way again). Verified directly: polled `isRollingLocally` at 20ms
+resolution through a real manual click and confirmed the spin now
+genuinely fires, where before this exact test would have shown it
+never becoming true at all.
+
+I'm not walking back the v1.25/v1.26 reconnection-timing fixes — those
+addressed real, separately-confirmed issues — but this was clearly the
+dominant bug hiding underneath them the whole time.
+
+Full regression suite (6 files) re-run after the fix — all passing.
+
 ## v1.26 — the watchdog itself was the bug
 
 Your v1.25 report was the missing piece: "dice roll and then stop" —
