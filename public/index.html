@@ -628,7 +628,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.27';
+const APP_VERSION = '1.28';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -679,6 +679,47 @@ socket.on('connect', () => {
 socket.on('disconnect', () => {
   document.getElementById('connDot').classList.remove('connected');
   document.getElementById('connText').textContent = 'Disconnected — reconnecting…';
+});
+
+// Returning from the home screen / another app is a much stronger and
+// more immediate signal than anything socket.io's own reconnection
+// logic gives us — that logic depends on the browser correctly
+// detecting a dead connection (which, per testing, can behave
+// differently and less reliably through a real mobile background
+// period than through a simulated network drop) and on queued JS
+// timers actually firing afterward, which a backgrounded/suspended
+// tab is exactly the scenario known to disrupt. This fires the moment
+// the tab is actually looked at again, independent of whatever state
+// the socket connection itself claims to be in.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  // A real roll only ever takes ~750ms — if we're still "mid-roll"
+  // right as the page becomes visible again, that roll did not
+  // survive whatever just happened while backgrounded. Don't wait on
+  // the existing retry/watchdog timers inside requestRoll(), which
+  // depend on setTimeout callbacks that may themselves have been
+  // delayed or dropped entirely during the background period — clear
+  // it immediately instead.
+  if (isRollingLocally) {
+    isRollingLocally = false;
+    rollAnimTimerFired = false;
+    rollServerDataReady = false;
+  }
+  if (!socket.connected) {
+    socket.connect();
+  } else {
+    // Already connected (the underlying connection may never have
+    // actually dropped, just the JS execution was paused) — any
+    // state_update messages that arrived while paused are delivered
+    // and processed as soon as execution resumes, so by the time this
+    // handler runs latestState should already reflect the current
+    // server state. Re-run the full routing/render logic (not just
+    // renderPlaying — the player may not even be on the Playing screen)
+    // to make sure the visible UI actually reflects it, rather than
+    // whatever was last painted before the tab was hidden.
+    if (latestState) handleStateUpdate(latestState);
+    if (myName) socket.emit('join_lobby', myName); // cheap and idempotent server-side if already the current player; cheap insurance if the seat needs re-matching
+  }
 });
 
 let pendingJoinName = null; // the name just attempted — committed to myName only once the server confirms via 'joined', not optimistically on click
@@ -791,7 +832,8 @@ function renderSettingsReadout(settings){
   `;
 }
 
-socket.on('state_update', (state) => {
+socket.on('state_update', (state) => { handleStateUpdate(state); });
+function handleStateUpdate(state) {
   latestState = state;
   amHost = state.hostId === myId;
   if (state.phase !== 'editing') editFormPopulated = false;
@@ -854,7 +896,7 @@ socket.on('state_update', (state) => {
   } else {
     showScreen('screenLobby');
   }
-});
+}
 
 // ── Gameplay rendering ─────────────────────────────────────────────
 const CATEGORY_LABELS = {
