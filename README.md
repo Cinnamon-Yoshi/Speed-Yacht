@@ -82,6 +82,39 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.26 — the watchdog itself was the bug
+
+Your v1.25 report was the missing piece: "dice roll and then stop" —
+not spinning forever, but landing frozen on dimmed all-1s dice with
+nothing pickable. That's a different, more specific symptom than
+before, and it pointed straight at the watchdog I'd added in v1.25 as
+a safety net.
+
+Confirmed by reading it back: the watchdog fired after 4 seconds and
+force-set `isRollingLocally = false`, then re-rendered from whatever
+state the client currently had — which, if the roll's actual response
+never arrived (returning from the home screen right as a new round's
+auto-roll fires being the most likely trigger), was still the
+pre-roll data: dice at their default `[1,1,1,1,1]`, `rollsUsed` still
+0. So instead of an endless spin, the "fix" produced a different dead
+end — frozen dice, nothing to pick, roll button quietly re-enabled
+but with no visual sign that trying again would do anything.
+
+Rebuilt it properly: if the roll doesn't resolve normally within ~4s,
+it now checks whether the connection is actually alive. If yes, it
+retries the roll itself (up to 3 times) rather than giving up. If
+no, it does nothing and leaves the spin state alone — reconnection
+already resets things properly once it actually succeeds, so forcing
+a "resolution" while still offline was exactly what was producing the
+stale frozen dice. Verified directly: severed the connection mid-roll
+and confirmed it now waits correctly through the disconnect (no more
+premature stale render) and resolves with the real rolled dice values
+the moment reconnection genuinely completes, typically within ~2
+seconds.
+
+Full regression suite (6 files) re-run after the change — all
+passing.
+
 ## v1.25 — an honest non-fix: couldn't reproduce it, added a safety net instead
 
 You confirmed v1.24, minimized (not closed) for ~25 seconds after
