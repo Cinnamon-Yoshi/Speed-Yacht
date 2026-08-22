@@ -52,6 +52,7 @@
   .h-title{ font-weight:800; font-size:1.05em; display:flex; align-items:center; gap:6px; }
   .h-icon{ width:1.1em; height:1.1em; flex:0 0 auto; }
   .version-tag{ font-size:0.72em; font-weight:400; opacity:0.55; align-self:center; }
+  .debug-log-link{ font-size:0.65em; font-weight:400; opacity:0.4; align-self:center; margin-left:6px; text-decoration:underline; cursor:pointer; }
 
   /* ===== Playing screen — header-bar (round + player names) sits
      between the dice row and the scoresheet, NOT next to the dice/timer
@@ -452,6 +453,7 @@
     </div>
     <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
     <span class="version-tag" id="appVersion"></span>
+    <span class="debug-log-link" id="debugLogLink">log</span>
   </div>
 
   <!-- Lobby -->
@@ -633,7 +635,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.29';
+const APP_VERSION = '1.31';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -776,15 +778,16 @@ document.getElementById('stuckRecoverLink').addEventListener('click', () => {
   socket.connect();
   if (latestState) handleStateUpdate(latestState);
 });
-document.getElementById('stuckRecoverLink').addEventListener('contextmenu', (e) => {
-  e.preventDefault();
+
+// Diagnostic log viewing — a plain, always-visible "log" link in the
+// header, not a long-press gesture. Long-press on mobile is genuinely
+// unreliable: the browser's own native text-selection/copy menu can
+// intercept it, and small finger movement during the hold cancels it
+// via touchmove — both real reasons a tap-and-hold could quietly fail
+// to work for someone. A direct tap has none of those failure modes.
+document.getElementById('debugLogLink').addEventListener('click', () => {
   alert(diagLog.join('\n') || 'No diagnostic events logged yet.');
 });
-let recoverLinkPressTimer = null;
-document.getElementById('stuckRecoverLink').addEventListener('touchstart', () => {
-  recoverLinkPressTimer = setTimeout(() => alert(diagLog.join('\n') || 'No diagnostic events logged yet.'), 700);
-});
-document.getElementById('stuckRecoverLink').addEventListener('touchend', () => clearTimeout(recoverLinkPressTimer));
 
 let pendingJoinName = null; // the name just attempted — committed to myName only once the server confirms via 'joined', not optimistically on click
 document.getElementById('joinBtn').onclick = () => {
