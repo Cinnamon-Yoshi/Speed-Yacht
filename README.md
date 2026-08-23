@@ -82,6 +82,43 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.36 — round summary is now fully manual, plus host-only removal
+
+- **Host-only player removal.** Confirmed a real gap: removal only
+  checked the PIN, not whether the requester was actually the current
+  host — meaning anyone who knew the PIN, host or not, could remove a
+  player. Fixed to require both. Verified directly: a non-host with
+  the correct PIN gets rejected; the actual host succeeds.
+
+- **Round Summary rebuilt around a manual Continue button instead of
+  timers.** Both the summary-display timer and the intro-display timer
+  are gone entirely — there's no more auto-advancing on a clock at
+  all. "Next up: Round X of 13" (renamed from "…and now Round X of
+  13") now shows immediately alongside the scores table instead of
+  after a delay on a separate screen. A yellow "Continue" button —
+  host-only, everyone else sees a "waiting for the host" message
+  instead — is what actually moves the game to the next round, and
+  it's dimmed and disabled for as long as anyone's disconnected,
+  enforced on the server too (not just the button's visual state, in
+  case the client's ever out of sync). This also let last session's
+  whole pause/resume-around-a-disconnect mechanism get removed — it
+  existed specifically to work around a timer that no longer exists.
+  Verified end to end: no auto-advance even after waiting well past
+  the old delay, a non-host's continue attempt is silently ignored, a
+  host's attempt while someone's disconnected is blocked, and it
+  correctly advances once that same host tries again after everyone's
+  back. Also ran a full 13-round game start to finish using this flow
+  throughout, and separately confirmed Full-30 mode's own round timer
+  (untouched code) still sets up correctly — the two modes only ever
+  differed in how a round *ends*, never in what happens after, so
+  fixing that shared path fixes it for both.
+
+- **Removed the "Connected"/"Disconnected — reconnecting…" text** next
+  to the header dot, leaving just the dot itself.
+
+Verified with real syntax checks and functional tests throughout this
+session (the sandbox persisted this time, unlike the previous one).
+
 ## v1.35 — status dots, host reclaim, locked-out Lobby, and the choppy dice fix
 
 - **Round Summary status simplified to dots.** Confirmed only two
