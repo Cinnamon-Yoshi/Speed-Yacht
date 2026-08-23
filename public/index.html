@@ -249,8 +249,16 @@
   #rsIntroState .rs-title{ margin-bottom:0; }
   .rs-row{
     display:grid; grid-template-columns:28% 18% 8% 18% 28%; align-items:center;
-    padding:10px 8px; background:rgba(255,255,255,0.05); border-radius:8px;
-    margin-bottom:10px; min-height:54px;
+    padding:10px 8px; margin-bottom:0; min-height:54px;
+  }
+  .rs-row-wrap{ background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:10px; }
+  .rs-status-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:0 8px 8px 14px; margin-top:-4px;
+  }
+  .rs-remove-btn{
+    font-size:0.72em; font-weight:700; color:#e07a7a; opacity:0.85;
+    text-decoration:underline; cursor:pointer; padding:2px 4px; margin-left:8px;
   }
   .rs-name{ font-weight:800; font-size:0.85em; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:6px; }
   .rs-took{ font-size:0.75em; opacity:0.7; text-align:center; }
@@ -372,6 +380,16 @@
     width:100%; background:rgba(255,255,255,0.06); border:1px solid rgba(212,175,55,0.4); border-radius:10px;
     color:#fff; font-weight:800; font-size:1em; padding:12px 14px; margin-bottom:14px; text-align:center;
   }
+  .reconnect-picker-box{
+    background:rgba(212,175,55,0.08); border:1px solid rgba(212,175,55,0.35); border-radius:12px;
+    padding:12px; margin-bottom:16px;
+  }
+  .reconnect-picker-label{ font-size:0.82em; opacity:0.85; margin-bottom:10px; text-align:center; }
+  .reconnect-picker-btn{
+    width:100%; padding:12px; border:1px solid var(--gold); border-radius:10px; background:rgba(212,175,55,0.15);
+    color:var(--gold); font-weight:800; font-size:0.95em; cursor:pointer; margin-bottom:8px;
+  }
+  .reconnect-picker-btn:last-child{ margin-bottom:0; }
   .primary-btn{
     width:100%; padding:14px; border:none; border-radius:12px; background:var(--gold); color:#111;
     font-weight:900; font-size:1em; cursor:pointer;
@@ -460,6 +478,10 @@
   <div class="screen active" id="screenLobby">
     <div class="h-sub">Enter your name to join the game</div>
     <div class="error-msg" id="lobbyError"></div>
+    <div class="reconnect-picker-box" id="reconnectPickerBox" style="display:none;">
+      <div class="reconnect-picker-label">Were you just disconnected? Tap your name to get back in:</div>
+      <div id="reconnectPickerButtons"></div>
+    </div>
     <input class="lobby-input" id="nameInput" placeholder="Your name" maxlength="20">
     <button class="primary-btn" id="joinBtn">Join</button>
     <div class="gamelog-link" id="openGameLogFromLobby">📖 Game Log</div>
@@ -635,7 +657,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.32';
+const APP_VERSION = '1.33';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -973,6 +995,32 @@ function handleStateUpdate(state) {
     }
   } else {
     showScreen('screenLobby');
+    // Anyone currently disconnected is a real, live seat waiting to be
+    // reclaimed — surface them as tappable buttons instead of leaving a
+    // returning player to remember and retype their exact name. Purely
+    // a convenience: tapping one just fills the name and submits it
+    // through the exact same join_lobby path typing it would use, so
+    // it's no more (and no less) secure than the name match already
+    // was — anyone could always type any name. This just removes the
+    // friction of having to get it exactly right while possibly
+    // fumbling with a phone that just reconnected.
+    const disconnectedPlayers = state.players.filter(p => !p.connected);
+    const pickerBox = document.getElementById('reconnectPickerBox');
+    if (disconnectedPlayers.length > 0) {
+      pickerBox.style.display = '';
+      document.getElementById('reconnectPickerButtons').innerHTML = disconnectedPlayers.map(p =>
+        `<button type="button" class="reconnect-picker-btn" data-name="${p.name}">${p.name}</button>`
+      ).join('');
+      document.querySelectorAll('.reconnect-picker-btn').forEach(btn => {
+        btn.onclick = () => {
+          const name = btn.dataset.name;
+          pendingJoinName = name;
+          socket.emit('join_lobby', name);
+        };
+      });
+    } else {
+      pickerBox.style.display = 'none';
+    }
   }
 }
 
@@ -1318,13 +1366,21 @@ function renderPlaying(state) {
   slider.innerHTML = diceVisualOrder.map((actualIndex, slot) => {
     const val = myG.dice[actualIndex];
     const held = myG.held[actualIndex];
-    const spinning = isRollingLocally && !held;
-    // isLocked (the DIMMED visual) is distinct from clickable (which
-    // gates interaction) — matching the proven design exactly: a die
-    // should only look dimmed/locked before the very first roll has
-    // happened, never while it's actively mid-spin (spinning already
-    // makes that clear enough visually on its own).
-    const isLocked = myG.rollsUsed === 0 && !isRollingLocally;
+    // Tumble continuously from the moment a fresh round begins until
+    // the first roll actually resolves — matching the proven design's
+    // "dice tumble continuously through the pre-roll timer buildup"
+    // behavior, which existed earlier in this project but got lost
+    // somewhere along the way (most likely when auto-roll was added:
+    // isLocked's dimmed/static look ended up covering this exact
+    // window instead). Sitting static and dimmed for the ~3s buildup,
+    // then only spinning for the last ~750ms, reads as broken/slow —
+    // continuous tumble the whole time reads as anticipation instead.
+    const isPreRollWaiting = myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally;
+    const spinning = (isRollingLocally || isPreRollWaiting) && !held;
+    // isLocked (the DIMMED, static visual) is now reserved for having
+    // actually FINISHED the round (nothing left to do this turn) — not
+    // for "hasn't rolled yet", which now tumbles instead per above.
+    const isLocked = myG.doneThisRound;
     const animClass = spinning ? ` is-rolling rolling-${(actualIndex%3)+1}` : '';
     return `<div class="die-container${held?' held':''}${isLocked?' locked':''}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
       ${create3DCubeHtml(val)}
@@ -1563,28 +1619,53 @@ function renderRoundSummary(state) {
 
   const summary = (g.roundSummary || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   document.getElementById('roundSummaryList').innerHTML = summary.map(entry => {
-    if (!entry.key) {
-      return `<div class="rs-row">
-        <span class="rs-name">${entry.name}</span>
-        <span class="rs-took">took</span>
-        <span class="rs-amt">–</span>
-        <span class="rs-for">for</span>
-        <span class="rs-cat">no score</span>
-      </div>`;
-    }
-    // "63 BONUS!" badge is an addition beyond the proven design (which
-    // never actually implemented the badge, despite it being on the
-    // original backlog) — kept as a genuine improvement, layered onto
-    // the otherwise-exact proven row structure.
-    const bonusBadge = entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : '';
-    return `<div class="rs-row">
-      <span class="rs-name">${entry.name}</span>
-      <span class="rs-took">took</span>
-      <span class="rs-amt">${entry.val}</span>
-      <span class="rs-for">for</span>
-      <span class="rs-cat">${catIconHtml(entry.key)}${bonusBadge}</span>
-    </div>`;
+    // Live connection status — looked up fresh from state.players each
+    // render, not from the roundSummary snapshot (which is fixed the
+    // moment the round ends and would go stale the instant someone
+    // reconnects while this screen is still showing). This is the
+    // whole point of surfacing status here: everyone can see who's
+    // missing and remind them out loud before the game moves on.
+    const player = state.players.find(p => p.id === entry.id);
+    const isDisconnected = player && !player.connected;
+    const statusRow = isDisconnected
+      ? `<div class="rs-status-row">
+          <span class="reconnecting">reconnecting…</span>
+          ${amHost ? `<span class="rs-remove-btn" data-player-id="${entry.id}" data-player-name="${entry.name}">Remove from game</span>` : ''}
+        </div>`
+      : '';
+    const gridRow = !entry.key
+      ? `<div class="rs-row">
+          <span class="rs-name">${entry.name}</span>
+          <span class="rs-took">took</span>
+          <span class="rs-amt">–</span>
+          <span class="rs-for">for</span>
+          <span class="rs-cat">no score</span>
+        </div>`
+      // "63 BONUS!" badge is an addition beyond the proven design (which
+      // never actually implemented the badge, despite it being on the
+      // original backlog) — kept as a genuine improvement, layered onto
+      // the otherwise-exact proven row structure.
+      : `<div class="rs-row">
+          <span class="rs-name">${entry.name}</span>
+          <span class="rs-took">took</span>
+          <span class="rs-amt">${entry.val}</span>
+          <span class="rs-for">for</span>
+          <span class="rs-cat">${catIconHtml(entry.key)}${entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : ''}</span>
+        </div>`;
+    return `<div class="rs-row-wrap">${gridRow}${statusRow}</div>`;
   }).join('');
+
+  document.querySelectorAll('.rs-remove-btn').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const playerId = btn.dataset.playerId;
+      const playerName = btn.dataset.playerName;
+      if (!confirm(`Remove ${playerName} from the game? They won't be able to rejoin this game if you do.`)) return;
+      const pin = prompt('Host PIN to confirm:');
+      if (pin === null) return; // cancelled
+      socket.emit('host_remove_disconnected_player', { playerId, pin });
+    };
+  });
 }
 
 function renderResults(state) {
@@ -1804,6 +1885,9 @@ socket.on('game_log_delete_result', ({ success, message }) => {
     document.getElementById('screenGameLog').classList.remove('gl-admin-mode');
     alert('Delete failed: ' + (message || 'incorrect PIN'));
   }
+});
+socket.on('remove_player_result', ({ success, message }) => {
+  if (!success) alert('Could not remove player: ' + (message || 'unknown error'));
 });
 
 function renderGameLog() {
