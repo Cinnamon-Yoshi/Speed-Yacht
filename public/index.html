@@ -53,6 +53,7 @@
   .h-icon{ width:1.1em; height:1.1em; flex:0 0 auto; }
   .version-tag{ font-size:0.72em; font-weight:400; opacity:0.55; align-self:center; }
   .debug-log-link{ font-size:0.65em; font-weight:400; opacity:0.4; align-self:center; margin-left:6px; text-decoration:underline; cursor:pointer; }
+  .admin-header-link{ font-size:0.65em; font-weight:700; color:var(--gold); align-self:center; margin-left:8px; text-decoration:underline; cursor:pointer; }
 
   /* ===== Playing screen — header-bar (round + player names) sits
      between the dice row and the scoresheet, NOT next to the dice/timer
@@ -252,15 +253,13 @@
     padding:10px 8px; margin-bottom:0; min-height:54px;
   }
   .rs-row-wrap{ background:rgba(255,255,255,0.05); border-radius:8px; margin-bottom:10px; }
-  .rs-status-row{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:0 8px 8px 14px; margin-top:-4px;
-  }
-  .rs-remove-btn{
-    font-size:0.72em; font-weight:700; color:#e07a7a; opacity:0.85;
-    text-decoration:underline; cursor:pointer; padding:2px 4px; margin-left:8px;
-  }
-  .rs-name{ font-weight:800; font-size:0.85em; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:6px; }
+  .rs-name-wrap{ display:flex; align-items:center; gap:6px; overflow:hidden; padding-left:6px; }
+  .rs-dot{ width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .rs-dot-connected{ background:#4caf50; }
+  .rs-dot-disconnected{ background:#e05252; }
+  .rs-name{ font-weight:800; font-size:0.85em; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rs-name-disconnected{ color:#e07a7a; }
+  .rs-name-removable{ cursor:pointer; text-decoration:underline; }
   .rs-took{ font-size:0.75em; opacity:0.7; text-align:center; }
   .rs-amt{ font-size:1.15em; font-weight:900; color:var(--gold); text-align:center; }
   .rs-for{ font-size:0.75em; opacity:0.7; text-align:center; }
@@ -385,6 +384,7 @@
     padding:12px; margin-bottom:16px;
   }
   .reconnect-picker-label{ font-size:0.82em; opacity:0.85; margin-bottom:10px; text-align:center; }
+  .lobby-locked-msg{ font-size:0.85em; opacity:0.8; text-align:center; margin-bottom:16px; line-height:1.4; }
   .reconnect-picker-btn{
     width:100%; padding:12px; border:1px solid var(--gold); border-radius:10px; background:rgba(212,175,55,0.15);
     color:var(--gold); font-weight:800; font-size:0.95em; cursor:pointer; margin-bottom:8px;
@@ -472,16 +472,35 @@
     <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
     <span class="version-tag" id="appVersion"></span>
     <span class="debug-log-link" id="debugLogLink">log</span>
+    <span class="admin-header-link" id="adminHeaderLink" style="display:none;">🔒 Admin</span>
+  </div>
+
+  <!-- Global PIN-unlock overlay — lives outside any single .screen so
+       it's reachable from every one of them (Waiting Room, Round
+       Summary, Playing, wherever), not duplicated per-screen. Mainly
+       matters for reclaiming host mid-game if the original host's
+       phone dies — without this, whoever's left has no way to reach
+       the host-only controls (like removing a stuck disconnected
+       player) without restarting the whole game. -->
+  <div class="pin-box" id="pinBox" style="display:none;">
+    <div class="pin-label">Host PIN</div>
+    <input type="password" inputmode="numeric" class="pin-input" id="pinInput" placeholder="••••" maxlength="8">
+    <div class="pin-error" id="pinError"></div>
+    <div class="pin-btn-row">
+      <button class="secondary-btn" id="pinCancelBtn">Cancel</button>
+      <button class="primary-btn" id="pinSubmitBtn">Unlock</button>
+    </div>
   </div>
 
   <!-- Lobby -->
   <div class="screen active" id="screenLobby">
-    <div class="h-sub">Enter your name to join the game</div>
+    <div class="h-sub" id="lobbySub">Enter your name to join the game</div>
     <div class="error-msg" id="lobbyError"></div>
     <div class="reconnect-picker-box" id="reconnectPickerBox" style="display:none;">
       <div class="reconnect-picker-label">Were you just disconnected? Tap your name to get back in:</div>
       <div id="reconnectPickerButtons"></div>
     </div>
+    <div class="lobby-locked-msg" id="lobbyLockedMsg" style="display:none;">A game is already in progress and everyone's currently connected — check with the host if you think you should be able to join.</div>
     <input class="lobby-input" id="nameInput" placeholder="Your name" maxlength="20">
     <button class="primary-btn" id="joinBtn">Join</button>
     <div class="gamelog-link" id="openGameLogFromLobby">📖 Game Log</div>
@@ -504,16 +523,6 @@
     <div class="waiting-msg" id="waitingMsg">Waiting for host to start the game…</div>
     <div class="gi-settings-box" id="liveSettingsBox" style="display:none;"></div>
 
-    <button class="admin-btn" id="adminBtn">🔒 Admin</button>
-    <div class="pin-box" id="pinBox" style="display:none;">
-      <div class="pin-label">Host PIN</div>
-      <input type="password" inputmode="numeric" class="pin-input" id="pinInput" placeholder="••••" maxlength="8">
-      <div class="pin-error" id="pinError"></div>
-      <div class="pin-btn-row">
-        <button class="secondary-btn" id="pinCancelBtn">Cancel</button>
-        <button class="primary-btn" id="pinSubmitBtn">Unlock</button>
-      </div>
-    </div>
     <div class="gamelog-link" id="openGameLogFromWaiting" style="margin-top:14px;">📖 Game Log</div>
   </div>
 
@@ -657,7 +666,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.34';
+const APP_VERSION = '1.35';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -830,7 +839,7 @@ socket.on('joined', ({ id, isHost }) => {
   document.getElementById('lobbyError').textContent = '';
 });
 
-document.getElementById('adminBtn').onclick = () => {
+document.getElementById('adminHeaderLink').onclick = () => {
   document.getElementById('pinBox').style.display = '';
   document.getElementById('pinError').textContent = '';
   document.getElementById('pinInput').value = '';
@@ -947,7 +956,7 @@ function handleStateUpdate(state) {
       ).join('');
       document.getElementById('waitingMsg').style.display = '';
       document.getElementById('liveSettingsBox').style.display = 'none';
-      document.getElementById('adminBtn').style.display = '';
+      document.getElementById('adminHeaderLink').style.display = '';
     } else if (state.phase === 'editing') {
       if (amHost) {
         // Only populate once per edit session — repopulating on every
@@ -969,7 +978,7 @@ function handleStateUpdate(state) {
         // Admin/PIN stays available even once someone else is editing —
         // if the host's connection dies mid-setup, anyone who knows the
         // PIN can still take over rather than the game being stuck.
-        document.getElementById('adminBtn').style.display = '';
+        document.getElementById('adminHeaderLink').style.display = '';
       }
     } else if (state.phase === 'accepting') {
       showScreen('screenAccept');
@@ -981,7 +990,14 @@ function handleStateUpdate(state) {
       document.getElementById('acceptBtn').disabled = alreadyAccepted;
       document.getElementById('acceptBtn').textContent = alreadyAccepted ? 'Waiting on others…' : 'Accept';
       document.getElementById('editAgainBtn').style.display = amHost ? '' : 'none';
+      document.getElementById('adminHeaderLink').style.display = '';
     } else if (state.phase === 'playing') {
+      // Shown through every sub-screen of active play (Playing itself,
+      // the Round Summary hold, and Results) — the host could disconnect
+      // at any of these points, and whoever's left needs a way to reach
+      // host-only controls (removing a stuck disconnected player,
+      // starting the next game) without restarting everything.
+      document.getElementById('adminHeaderLink').style.display = '';
       if (state.game.gameOver) {
         showScreen('screenResults');
         renderResults(state);
@@ -995,6 +1011,7 @@ function handleStateUpdate(state) {
     }
   } else {
     showScreen('screenLobby');
+    document.getElementById('adminHeaderLink').style.display = 'none'; // claiming host before even joining doesn't do anything meaningful — hide it here specifically
     // Anyone currently disconnected is a real, live seat waiting to be
     // reclaimed — surface them as tappable buttons instead of leaving a
     // returning player to remember and retype their exact name. Purely
@@ -1006,6 +1023,29 @@ function handleStateUpdate(state) {
     // fumbling with a phone that just reconnected.
     const disconnectedPlayers = state.players.filter(p => !p.connected);
     const pickerBox = document.getElementById('reconnectPickerBox');
+    const nameInput = document.getElementById('nameInput');
+    const joinBtn = document.getElementById('joinBtn');
+    const lockedMsg = document.getElementById('lobbyLockedMsg');
+    // Once a game is actually underway (any phase past 'lobby'), typing
+    // a brand-new name is a dead end — the server would just reject it
+    // with "Joining is locked" anyway, since only the 4 players already
+    // in this game can be part of it. Rather than let someone type a
+    // name and hit that error, don't offer the option at all: only
+    // reclaiming an existing disconnected seat is actually possible.
+    const gameInProgress = state.phase !== 'lobby';
+    if (gameInProgress) {
+      nameInput.style.display = 'none';
+      joinBtn.style.display = 'none';
+      lockedMsg.style.display = disconnectedPlayers.length > 0 ? 'none' : '';
+      document.getElementById('lobbySub').textContent = disconnectedPlayers.length > 0
+        ? 'A game is in progress'
+        : 'A game is in progress — check with the host';
+    } else {
+      nameInput.style.display = '';
+      joinBtn.style.display = '';
+      lockedMsg.style.display = 'none';
+      document.getElementById('lobbySub').textContent = 'Enter your name to join the game';
+    }
     if (disconnectedPlayers.length > 0) {
       pickerBox.style.display = '';
       document.getElementById('reconnectPickerButtons').innerHTML = disconnectedPlayers.map(p =>
@@ -1363,33 +1403,54 @@ function renderPlaying(state) {
   // Doesn't vary per-die, so compute it once rather than inside the map.
   const clickable = canInteract && myG.rollsUsed > 0 && !isRollingLocally;
 
-  slider.innerHTML = diceVisualOrder.map((actualIndex, slot) => {
-    const val = myG.dice[actualIndex];
+  // Figure out each die's spin/held/lock state BEFORE touching the DOM,
+  // so a render that doesn't actually change any of that can skip
+  // rebuilding the dice entirely — see the skip-check below for why
+  // that matters.
+  const diceStates = diceVisualOrder.map((actualIndex, slot) => {
     const held = myG.held[actualIndex];
-    // Tumble continuously from the moment a fresh round begins until
-    // the first roll actually resolves — matching the proven design's
-    // "dice tumble continuously through the pre-roll timer buildup"
-    // behavior, which existed earlier in this project but got lost
-    // somewhere along the way (most likely when auto-roll was added:
-    // isLocked's dimmed/static look ended up covering this exact
-    // window instead). Sitting static and dimmed for the ~3s buildup,
-    // then only spinning for the last ~750ms, reads as broken/slow —
-    // continuous tumble the whole time reads as anticipation instead.
     const isPreRollWaiting = myG.rollsUsed === 0 && !myG.doneThisRound && !isRollingLocally;
     const spinning = (isRollingLocally || isPreRollWaiting) && !held;
-    // isLocked (the DIMMED, static visual) is now reserved for having
-    // actually FINISHED the round (nothing left to do this turn) — not
-    // for "hasn't rolled yet", which now tumbles instead per above.
-    const isLocked = myG.doneThisRound;
-    const animClass = spinning ? ` is-rolling rolling-${(actualIndex%3)+1}` : '';
-    return `<div class="die-container${held?' held':''}${isLocked?' locked':''}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
-      ${create3DCubeHtml(val)}
-      ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
-    </div>`;
-  }).join('');
+    return { actualIndex, slot, val: myG.dice[actualIndex], held, spinning };
+  });
+  // A die's CSS tumble animation is tied to its specific DOM element —
+  // rebuilding via innerHTML destroys and recreates that element, which
+  // restarts the animation from its first frame even if the die was
+  // already mid-rotation. The buildup tumble (isPreRollWaiting) and the
+  // real roll tumble (isRollingLocally) use the identical visual
+  // classes on purpose, so the moment auto-roll actually fires and
+  // isRollingLocally flips on, a normal render would rebuild the dice
+  // for a state that LOOKS the same — and that rebuild alone is what
+  // produced the visible "chop" right at that transition. Skip the
+  // rebuild whenever nothing an observer could actually see has
+  // changed, and let whatever's already animating keep animating
+  // uninterrupted.
+  const diceSignature = diceStates.map(d => `${d.slot}:${d.spinning ? 'S' : d.val}:${d.held ? 'H' : ''}`).join('|');
+  const lockedSignature = myG.doneThisRound ? '1' : '0';
+  const skipDiceRebuild = slider.dataset.renderSignature === diceSignature + '|' + lockedSignature && slider.children.length === diceStates.length;
+
+  if (!skipDiceRebuild) {
+    slider.dataset.renderSignature = diceSignature + '|' + lockedSignature;
+    slider.innerHTML = diceStates.map(({ actualIndex, slot, val, held, spinning }) => {
+      // isLocked (the DIMMED, static visual) is reserved for having
+      // actually FINISHED the round (nothing left to do this turn) —
+      // not for "hasn't rolled yet", which tumbles instead per above.
+      const isLocked = myG.doneThisRound;
+      const animClass = spinning ? ` is-rolling rolling-${(actualIndex%3)+1}` : '';
+      return `<div class="die-container${held?' held':''}${isLocked?' locked':''}${animClass}" data-slot="${slot}" data-actual-index="${actualIndex}" style="left:${slot*step}px;">
+        ${create3DCubeHtml(val)}
+        ${held ? '<span class="hold-lbl">HOLD</span>' : ''}
+      </div>`;
+    }).join('');
+  }
 
   slider.querySelectorAll('.die-container').forEach(el => {
-    if (clickable) {
+    if (clickable && !skipDiceRebuild) {
+      // Only (re-)attach when the dice were actually rebuilt — these
+      // are fresh elements in that case. If the rebuild was skipped,
+      // the existing elements already have their listeners from when
+      // they were originally built; calling this again on the same,
+      // still-alive elements would just stack duplicate listeners.
       setupUnifiedDiePointer(el, step, dieSizeNum);
     }
   });
@@ -1625,17 +1686,23 @@ function renderRoundSummary(state) {
     // reconnects while this screen is still showing). This is the
     // whole point of surfacing status here: everyone can see who's
     // missing and remind them out loud before the game moves on.
+    //
+    // Only two states actually exist (connected/disconnected — there's
+    // no "reconnecting" as a distinct third state, that word was just
+    // being used as the disconnected label) — a small dot conveys that
+    // more compactly than a text label, and for a disconnected player
+    // the name itself turns red and — for the host specifically —
+    // becomes the tap target for removal, rather than a separate
+    // "Remove from game" link taking up its own row.
     const player = state.players.find(p => p.id === entry.id);
     const isDisconnected = player && !player.connected;
-    const statusRow = isDisconnected
-      ? `<div class="rs-status-row">
-          <span class="reconnecting">reconnecting…</span>
-          ${amHost ? `<span class="rs-remove-btn" data-player-id="${entry.id}" data-player-name="${entry.name}">Remove from game</span>` : ''}
-        </div>`
-      : '';
+    const dotClass = isDisconnected ? 'rs-dot-disconnected' : 'rs-dot-connected';
+    const nameClass = isDisconnected ? ' rs-name-disconnected' : '';
+    const removable = isDisconnected && amHost;
+    const nameHtml = `<span class="rs-name-wrap"><span class="rs-dot ${dotClass}"></span><span class="rs-name${nameClass}${removable ? ' rs-name-removable' : ''}"${removable ? ` data-player-id="${entry.id}" data-player-name="${entry.name}"` : ''}>${entry.name}</span></span>`;
     const gridRow = !entry.key
       ? `<div class="rs-row">
-          <span class="rs-name">${entry.name}</span>
+          ${nameHtml}
           <span class="rs-took">took</span>
           <span class="rs-amt">–</span>
           <span class="rs-for">for</span>
@@ -1646,20 +1713,20 @@ function renderRoundSummary(state) {
       // original backlog) — kept as a genuine improvement, layered onto
       // the otherwise-exact proven row structure.
       : `<div class="rs-row">
-          <span class="rs-name">${entry.name}</span>
+          ${nameHtml}
           <span class="rs-took">took</span>
           <span class="rs-amt">${entry.val}</span>
           <span class="rs-for">for</span>
           <span class="rs-cat">${catIconHtml(entry.key)}${entry.hitBonusThisRound ? '<span class="rs-bonus-badge">63 BONUS!</span>' : ''}</span>
         </div>`;
-    return `<div class="rs-row-wrap">${gridRow}${statusRow}</div>`;
+    return `<div class="rs-row-wrap">${gridRow}</div>`;
   }).join('');
 
-  document.querySelectorAll('.rs-remove-btn').forEach(btn => {
-    btn.onclick = (e) => {
+  document.querySelectorAll('.rs-name-removable').forEach(nameEl => {
+    nameEl.onclick = (e) => {
       e.stopPropagation();
-      const playerId = btn.dataset.playerId;
-      const playerName = btn.dataset.playerName;
+      const playerId = nameEl.dataset.playerId;
+      const playerName = nameEl.dataset.playerName;
       if (!confirm(`Remove ${playerName} from the game? They won't be able to rejoin this game if you do.`)) return;
       const pin = prompt('Host PIN to confirm:');
       if (pin === null) return; // cancelled
