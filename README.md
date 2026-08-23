@@ -82,6 +82,48 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.32 — the real numbers finally add up
+
+Your second log was the one that actually cracked this. It showed
+reconnection working correctly — right up until you landed on the
+Lobby screen with no further entries logged. That gap itself was the
+clue: I had no logging on the "kicked out" branch at all, so I closed
+that first (now logs exactly why the client thinks it's no longer in
+the game, and logs `join_error` directly — the previous log couldn't
+have shown a rejection even if one happened).
+
+But working through the actual timestamps in that log turned up
+something more concrete than another logging gap. Socket.io's default
+server-side dead-connection detection takes about 45 seconds
+(pingInterval 25s + pingTimeout 20s). The mid-game reconnect grace
+period was 60 seconds *on top of that* — but the client's own
+awareness of having disconnected is delayed by however long it was
+actually backgrounded, since its JS is frozen the whole time. Working
+through your log's real numbers: you were away about 2 minutes 25
+seconds. The server would have noticed the dead connection around the
+45s mark and started its 60s countdown from there — meaning your seat
+was very likely removed a good 40 seconds *before* your phone even
+got around to attempting a reconnect. Not a bug in the reconnect logic
+itself — the logic was working, it just didn't have enough time left
+to work with by the time it got a chance to run.
+
+Increased the mid-game grace period from 60s to 5 minutes, and the
+pre-game one from 30s to 90s, for the same reason. Verified with a
+proportionally-scaled real test (a gap that would have failed under
+the old window now succeeds under the new one, seat and all).
+
+I want to be honest about confidence here: the math lines up cleanly
+with everything in your log, and it's the first explanation that
+actually accounts for the specific numbers rather than a general
+theory. But I don't have a way to 100% confirm it without seeing it
+hold up for you. If you get kicked out again after this, the new
+`join_error` logging in particular should make it obvious right away
+whether this was actually the cause or not.
+
+Full regression suite (6 files) re-run after the change — all
+passing, including the join-mechanism suite most relevant to the
+grace-period change.
+
 ## v1.31 — the long-press was probably the problem, so it's gone
 
 Asked again where to find the log, which is a fair sign the long-press

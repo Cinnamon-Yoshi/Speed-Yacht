@@ -102,7 +102,21 @@ function broadcastState() {
 // actually freed up — long enough to survive a locked phone screen or a
 // brief wifi drop, short enough that someone who's truly gone doesn't
 // block the room forever.
-const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 60000;
+// Worked out from a real diagnostic log: the CLIENT's own awareness of
+// having disconnected is itself delayed by however long the tab was
+// actually backgrounded (JS execution freezes, so the client can't
+// even process its own disconnect event until it's foregrounded
+// again). Socket.io's default server-side dead-connection detection
+// takes ~45s (pingInterval 25s + pingTimeout 20s) on its own — so with
+// the old 60s value here, the math didn't work for anything but a
+// short background period: 45s detection + 60s grace = 105s is the
+// server-side deadline, but a client backgrounded for, say, 2.5
+// minutes doesn't even ATTEMPT to reconnect until it's foregrounded —
+// well past that deadline, even though the person was "coming right
+// back". Bumped substantially so the client's own reaction delay has
+// real room inside it, not just the server's countdown from the
+// moment it first notices.
+const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 300000;
 // Much shorter grace period before the game has actually started — a
 // dropped Lobby/Edit/Accept connection has nothing at stake (no dice,
 // no scores to lose), so there's no good reason to let the room sit in
@@ -118,7 +132,12 @@ const RECONNECT_GRACE_MS = parseInt(process.env.RECONNECT_GRACE_MS, 10) || 60000
 // active play since nothing irreversible has happened yet pre-game,
 // but needs real headroom for a genuine reconnect, not just a network
 // blip.
-const LOBBY_RECONNECT_GRACE_MS = parseInt(process.env.LOBBY_RECONNECT_GRACE_MS, 10) || 30000;
+// Same underlying math as RECONNECT_GRACE_MS above applies here too —
+// bumped from 30s for the same reason (the client's own awareness of
+// disconnecting is delayed by however long it was actually
+// backgrounded), just kept shorter than the mid-game window since
+// nothing irreversible has happened yet pre-game.
+const LOBBY_RECONNECT_GRACE_MS = parseInt(process.env.LOBBY_RECONNECT_GRACE_MS, 10) || 90000;
 
 function removePlayer(playerId) {
   state.players = state.players.filter(p => p.id !== playerId);
