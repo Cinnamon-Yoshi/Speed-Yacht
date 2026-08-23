@@ -246,8 +246,13 @@
      beyond the proven baseline, not a port. ===== */
   .rs-list{ width:100%; margin-bottom:8px; }
   .rs-title{ font-size:1.4em; font-weight:800; color:var(--gold); margin-bottom:14px; text-align:center; }
-  #rsIntroState{ margin-top:18px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.12); }
-  #rsIntroState .rs-title{ margin-bottom:0; }
+  .rs-next-up{
+    margin-top:18px; padding-top:18px; border-top:1px solid rgba(255,255,255,0.12);
+    font-size:1.2em; font-weight:800; color:var(--gold); text-align:center;
+  }
+  .rs-continue-btn{ margin-top:18px; }
+  .rs-continue-btn:disabled{ opacity:0.4; cursor:default; }
+  .rs-waiting-host{ margin-top:18px; text-align:center; font-size:0.85em; opacity:0.7; font-style:italic; }
   .rs-row{
     display:grid; grid-template-columns:28% 18% 8% 18% 28%; align-items:center;
     padding:10px 8px; margin-bottom:0; min-height:54px;
@@ -469,7 +474,7 @@
       <svg class="h-icon" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="0" y="0" width="100" height="100" rx="20" fill="#0b3d2e"/><g transform="rotate(45 50 50)"><rect x="20" y="20" width="60" height="60" rx="12" fill="#ffffff"/><circle cx="35" cy="35" r="7" fill="#0b3d2e"/><circle cx="65" cy="35" r="7" fill="#0b3d2e"/><circle cx="50" cy="50" r="7" fill="#0b3d2e"/><circle cx="35" cy="65" r="7" fill="#0b3d2e"/><circle cx="65" cy="65" r="7" fill="#0b3d2e"/></g></svg>
       Speed-Yacht
     </div>
-    <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Connecting…</span></div>
+    <div class="conn-status"><span class="conn-dot" id="connDot"></span></div>
     <span class="version-tag" id="appVersion"></span>
     <span class="debug-log-link" id="debugLogLink">log</span>
     <span class="admin-header-link" id="adminHeaderLink" style="display:none;">🔒 Admin</span>
@@ -586,19 +591,18 @@
     </div>
   </div>
 
-  <!-- Round Summary — two sub-states: 'summary' shows the scores-played
-       list, and 'intro' ADDS "…and now Round X of 13" below it, on the
-       SAME screen — per Denver's explicit request, this deliberately
-       diverges from the proven design (which replaces the list with
-       the intro on a second screen); here the table stays visible
-       throughout, with the intro message simply appended beneath it. -->
+  <!-- Round Summary — shown between rounds. No timers at all: the
+       "Next up" line shows immediately alongside the scores table
+       (not after a delay), and advancing to the next round is a
+       deliberate host action via the Continue button, not something
+       that happens on a clock. -->
   <div class="screen" id="screenRoundSummary">
     <div id="rsSummaryState">
       <div class="rs-title">Scores played that round:</div>
       <div class="rs-list" id="roundSummaryList"></div>
-    </div>
-    <div id="rsIntroState" style="display:none;">
-      <div class="rs-title" id="rsIntroTitle">…and now Round 2 of 13</div>
+      <div class="rs-next-up" id="rsNextUpTitle">Next up: Round 2 of 13</div>
+      <button class="primary-btn rs-continue-btn" id="rsContinueBtn" style="display:none;">Continue</button>
+      <div class="rs-waiting-host" id="rsWaitingHostMsg" style="display:none;">Waiting for the host to continue…</div>
     </div>
   </div>
 
@@ -666,7 +670,7 @@
 // package.json's "version") on every meaningful change. One shared
 // header (see .header/#appVersion) shows it on every screen now,
 // rather than a separate duplicated tag per screen.
-const APP_VERSION = '1.35';
+const APP_VERSION = '1.36';
 
 function triggerHaptic() {
   if (navigator.vibrate) navigator.vibrate(15);
@@ -705,7 +709,6 @@ function showScreen(id){
 socket.on('connect', () => {
   diag(`socket connect (id=${socket.id}), myName=${myName}, isRollingLocally-before-reset=${isRollingLocally}`);
   document.getElementById('connDot').classList.add('connected');
-  document.getElementById('connText').textContent = 'Connected';
   // CRITICAL for reconnection: the server's join_lobby handler has real
   // logic to re-associate a reconnecting socket with the player's
   // existing seat (matched by name) — but that logic only ever runs if
@@ -732,7 +735,6 @@ socket.on('connect', () => {
 socket.on('disconnect', (reason) => {
   diag(`socket disconnect, reason=${reason}, isRollingLocally=${isRollingLocally}`);
   document.getElementById('connDot').classList.remove('connected');
-  document.getElementById('connText').textContent = 'Disconnected — reconnecting…';
 });
 socket.on('connect_error', (err) => diag(`connect_error: ${err && err.message}`));
 socket.on('reconnect_attempt', (n) => diag(`reconnect_attempt #${n}`));
@@ -809,6 +811,10 @@ document.getElementById('stuckRecoverLink').addEventListener('click', () => {
   socket.connect();
   if (latestState) handleStateUpdate(latestState);
 });
+
+document.getElementById('rsContinueBtn').onclick = () => {
+  socket.emit('host_continue_next_round');
+};
 
 // Diagnostic log viewing — a plain, always-visible "log" link in the
 // header, not a long-press gesture. Long-press on mobile is genuinely
@@ -1001,7 +1007,7 @@ function handleStateUpdate(state) {
       if (state.game.gameOver) {
         showScreen('screenResults');
         renderResults(state);
-      } else if (state.game.roundPhase === 'summary' || state.game.roundPhase === 'intro') {
+      } else if (state.game.roundPhase === 'summary') {
         showScreen('screenRoundSummary');
         renderRoundSummary(state);
       } else {
@@ -1666,16 +1672,26 @@ function renderScoresheet(state) {
 function renderRoundSummary(state) {
   const g = state.game;
 
-  // Table stays visible throughout both phases — only the intro
-  // message below it toggles. (Denver's explicit request: keep the
-  // scores table up rather than replacing it with the intro message,
-  // diverging from the proven design's two-screen approach.)
-  document.getElementById('rsIntroState').style.display = g.roundPhase === 'intro' ? '' : 'none';
-  if (g.roundPhase === 'intro') {
-    // Server doesn't increment `round` until this phase finishes — the
-    // displayed number here is always "what's coming next", not the
-    // live authoritative round.
-    document.getElementById('rsIntroTitle').textContent = `…and now Round ${g.round + 1} of ${g.totalRounds}`;
+  // No timer-driven phases anymore — "Next up" shows immediately
+  // alongside the table, not after a delay. `round` doesn't increment
+  // until the host actually continues, so this is always "what's
+  // coming next" relative to the live authoritative round.
+  document.getElementById('rsNextUpTitle').textContent = `Next up: Round ${g.round + 1} of ${g.totalRounds}`;
+
+  const anyoneDisconnected = state.players.some(p => !p.connected);
+  const continueBtn = document.getElementById('rsContinueBtn');
+  const waitingMsg = document.getElementById('rsWaitingHostMsg');
+  if (amHost) {
+    continueBtn.style.display = '';
+    continueBtn.disabled = anyoneDisconnected;
+    continueBtn.textContent = anyoneDisconnected ? 'Continue (waiting on a disconnected player)' : 'Continue';
+    waitingMsg.style.display = 'none';
+  } else {
+    continueBtn.style.display = 'none';
+    waitingMsg.style.display = '';
+    waitingMsg.textContent = anyoneDisconnected
+      ? 'Waiting for everyone to reconnect, then the host to continue…'
+      : 'Waiting for the host to continue…';
   }
 
   const summary = (g.roundSummary || []).slice().sort((a, b) => a.name.localeCompare(b.name));
