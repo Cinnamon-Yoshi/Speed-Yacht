@@ -441,8 +441,21 @@ io.on('connection', (socket) => {
     const player = state.players.find(p => p.id === socket.id);
     if (!player) return; // must have joined first
     if (state.phase === 'playing') {
-      socket.emit('host_claim_result', { success: false, message: 'Game already in progress.' });
-      return;
+      const currentHost = state.players.find(p => p.id === state.hostId);
+      const currentHostIsGone = !currentHost || !currentHost.connected;
+      if (!currentHostIsGone) {
+        // Mid-game host claims are blocked UNLESS the current host is
+        // actually disconnected — otherwise this would let anyone with
+        // the PIN silently steal host control from someone actively
+        // running the game, which is exactly the kind of disruption
+        // the original phase-based block was trying to prevent. This
+        // just narrows that block to when it's actually needed: if the
+        // host's phone dies mid-game, somebody still needs a way to
+        // reach the host-only controls (like removing a stuck
+        // disconnected player) without restarting the whole game.
+        socket.emit('host_claim_result', { success: false, message: 'Game already in progress — the host is still connected.' });
+        return;
+      }
     }
     if (pin !== HOST_PIN) {
       socket.emit('host_claim_result', { success: false, message: 'Incorrect PIN.' });

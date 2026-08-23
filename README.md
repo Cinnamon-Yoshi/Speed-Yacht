@@ -82,6 +82,64 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.35 — status dots, host reclaim, locked-out Lobby, and the choppy dice fix
+
+- **Round Summary status simplified to dots.** Confirmed only two
+  statuses actually exist (connected/disconnected — "reconnecting…"
+  was just the label for the second one, not a real third state). A
+  small dot (green/red) now sits before each name instead of that
+  text. For a disconnected player, the name itself turns red and — for
+  the host specifically — becomes the tap target for removal, instead
+  of a separate "Remove from game" link. Verified the rendering
+  directly and confirmed the click still fires the correct removal
+  event with the right player ID.
+
+- **Host can now be reclaimed mid-game.** Real gap, confirmed by
+  reading the code: claiming host was flatly blocked the moment a game
+  started, no exceptions — meaning if the host's phone died mid-game,
+  nobody could ever reach host-only controls again, including the
+  removal feature above. Fixed so it's only blocked while the current
+  host is actually still connected; if they're gone, anyone with the
+  PIN can step in. Moved the "🔒 Admin" control out of the Waiting Room
+  specifically and into the header, so it's reachable from every
+  screen — Round Summary, Playing, Results — not just pre-game setup.
+  Verified directly: blocked while the host is active, succeeds the
+  moment they disconnect.
+
+- **Lobby no longer offers a dead-end "type a new name" once a game's
+  underway.** If the room has moved past the lobby phase, the name
+  input and Join button hide entirely — replaced by either the
+  tap-to-reconnect names (if anyone's currently disconnected) or a
+  plain "game in progress" message if not. Typing a brand-new name at
+  that point would have just hit the server's existing "Joining is
+  locked" rejection anyway; this just removes the dead end before
+  someone runs into it. Verified both cases directly.
+
+- **The choppy dice animation had a real, findable cause.** Every
+  render was rebuilding the dice by fully replacing their HTML, which
+  destroys and recreates the DOM elements — and a CSS animation
+  restarts from its first frame when its element is recreated, even if
+  it was already mid-rotation. The pre-roll buildup tumble and the
+  actual roll tumble use identical visual classes on purpose, so the
+  instant auto-roll fired and switched from one to the other, a normal
+  render rebuilt the dice for a state that looked the same — and that
+  unnecessary rebuild alone was producing the visible chop. Fixed by
+  skipping the rebuild whenever nothing an observer could actually see
+  has changed. Verified with precise polling right around the
+  transition instant: the same DOM element now persists smoothly
+  through both the buildup and the roll, only rebuilding once the roll
+  genuinely settles on its final value (which is correct and
+  necessary). Given how central this code is, also ran a broader
+  functional pass afterward — holding specific dice, rerolling with
+  others held, picking categories, and a full 13-round game — to
+  confirm nothing else regressed.
+
+Environment note: the sandbox reset before this session, wiping the
+working directory and test files. Rebuilt from the last shipped zip
+and the reference file, confirmed both matched, and verified every
+change above directly rather than relying on the (unavailable) 6-file
+regression suite from previous sessions.
+
 ## v1.34 — the round summary now actually holds, not just shows status
 
 You were right, and it was a real gap: v1.33 added visibility into
