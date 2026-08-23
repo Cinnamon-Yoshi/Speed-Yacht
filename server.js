@@ -236,6 +236,7 @@ function beginRoundSummary() {
       state.game.upperSumAtRoundStart[p.id] < 63 &&
       upperSum(pg.scores) >= 63);
     return {
+      id: p.id, // for live connection-status lookup client-side — NOT snapshotted here, since that would go stale the moment someone reconnects while this screen is up
       name: p.name,
       key: picked ? picked.key : null,
       val: picked ? picked.val : null,
@@ -321,6 +322,14 @@ io.on('connection', (socket) => {
   // future changes, so a socket connecting now would otherwise never
   // see any of the games already logged before it connected.
   socket.emit('game_log_update', gameLog);
+  // Same reasoning for state — without this, a freshly-connected socket
+  // that hasn't joined yet gets nothing at all until it joins itself or
+  // some OTHER player's action happens to trigger a broadcast. That
+  // silently broke the Lobby's reconnect-picker (which needs to know
+  // who's currently disconnected to show as tappable names) for the
+  // single most common case: someone opening the app for the first
+  // time in this visit, before anything else has happened.
+  socket.emit('state_update', publicState());
 
   socket.on('join_lobby', (name) => {
     name = (name || '').toString().trim().slice(0, 20);
@@ -626,6 +635,33 @@ io.on('connection', (socket) => {
     gameLog = gameLog.filter(e => e.id !== id);
     socket.emit('game_log_delete_result', { success: true });
     broadcastGameLog();
+  });
+
+  // Lets the host clear a disconnected player's seat mid-game — mainly
+  // useful in When-Ready mode, where a disconnected player otherwise
+  // blocks the round from ever advancing (nothing else waits on them
+  // in Full-30 mode, but When-Ready specifically waits for everyone).
+  // Deliberately requires them to actually BE disconnected server-side
+  // right now, not just whatever the client's UI last showed — a
+  // reconnect could have landed between the tap and this arriving.
+  socket.on('host_remove_disconnected_player', ({ playerId, pin }) => {
+    if (pin !== HOST_PIN) {
+      socket.emit('remove_player_result', { success: false, message: 'Incorrect PIN.' });
+      return;
+    }
+    const player = state.players.find(p => p.id === playerId);
+    if (!player) {
+      socket.emit('remove_player_result', { success: false, message: 'That player is no longer in the game.' });
+      return;
+    }
+    if (player.connected) {
+      socket.emit('remove_player_result', { success: false, message: 'That player has already reconnected.' });
+      return;
+    }
+    if (player.disconnectTimer) { clearTimeout(player.disconnectTimer); player.disconnectTimer = null; }
+    removePlayer(playerId);
+    if (state.game && !state.game.gameOver) maybeAdvanceWhenReady();
+    socket.emit('remove_player_result', { success: true });
   });
 
   socket.on('disconnect', () => {

@@ -82,6 +82,48 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.33 — dice tumble fix, plus your two reconnection UX ideas
+
+- **Dice sat static/dimmed during the buildup, then only briefly
+  spun** — confirmed and fixed: the dimmed/static look was covering
+  the entire pre-auto-roll waiting window, not just "finished this
+  turn" like intended. Dice now tumble continuously from the moment a
+  fresh round begins until the first roll actually resolves —
+  matching what you remembered from earlier in the project — and the
+  dimmed look is now reserved for a player who's genuinely done for
+  the round. Verified directly: confirmed tumbling mid-buildup,
+  correctly settling once the roll resolves.
+
+- **Round Summary now shows live connection status, with host
+  removal.** Each player's row shows "reconnecting…" in real time
+  (looked up fresh each render, not a frozen snapshot — updates the
+  instant someone actually reconnects while everyone's looking at this
+  screen). The host gets a "Remove from game" action next to anyone
+  currently disconnected — confirm, then a PIN prompt, then they're
+  out. Tested end to end: wrong PIN rejected, correct PIN succeeds, a
+  connected player can't be removed by mistake even if the button is
+  somehow tapped, and — importantly — removing someone who was the
+  only thing blocking a stuck When-Ready round correctly lets that
+  round advance immediately afterward.
+
+- **Lobby now shows disconnected players as tappable names to
+  reconnect as.** Anyone landing on the entry screen sees a "were you
+  just disconnected?" box listing anyone currently disconnected from
+  the game in progress — tap a name instead of having to retype it
+  exactly. Worth being upfront about the trade-off: this doesn't add
+  any new risk beyond what already existed (anyone could always type
+  any name to reconnect as them, since matching is by name only) — it
+  just makes an existing capability easier to use, which fits a casual
+  in-person game night. Along the way, found and fixed a real gap this
+  depended on: the server never actually sent state to a socket that
+  had connected but hadn't joined yet, meaning a brand-new visitor
+  would have seen nothing until they typed a name themselves. Fixed by
+  sending current state proactively on connection, matching the
+  existing pattern used for the Game Log.
+
+Full regression suite (6 files) re-run after all changes — all
+passing.
+
 ## v1.32 — the real numbers finally add up
 
 Your second log was the one that actually cracked this. It showed
