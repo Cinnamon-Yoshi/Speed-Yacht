@@ -82,6 +82,38 @@ no ongoing cost beyond Render's free tier.
   to your camera roll) — noted in project memory as wanted, not yet
   built.
 
+## v1.34 — the round summary now actually holds, not just shows status
+
+You were right, and it was a real gap: v1.33 added visibility into
+who's disconnected and a way for the host to remove them, but I never
+actually made the game *wait*. Your original request said "before
+continuing to the next round" — I built the first two pieces and
+missed that third one entirely, so the round just advanced on its
+normal timer regardless of anyone's connection status.
+
+Fixed properly this time, and it needed two parts, not one — my first
+attempt only caught someone who was already disconnected the instant
+the round ended, which doesn't match your actual report (you picked,
+*then* disconnected, after the summary screen and its timer had
+already started). Added the second half: if anyone disconnects while
+the summary or intro screen is already showing, the transition timer
+now gets cancelled immediately, and only resumes (giving the full
+normal viewing time from that point, not whatever was left of it)
+once everyone still in the game is actually reconnected — or once the
+host removes whoever's gone.
+
+Verified directly, including the exact sequence from your report:
+round ends normally, timer starts, a player disconnects a moment
+later — confirmed the round now stays held on summary well past when
+it would have normally advanced, and correctly resumes once that
+player reconnects. Also verified the host-removal path separately: a
+paused round correctly unblocks the moment the disconnected player is
+removed instead of reconnecting.
+
+Full regression suite (6 files) re-run after the change — all
+passing, including a full 13-round completed game to confirm normal
+play (nobody disconnecting) is completely unaffected.
+
 ## v1.33 — dice tumble fix, plus your two reconnection UX ideas
 
 - **Dice sat static/dimmed during the buildup, then only briefly

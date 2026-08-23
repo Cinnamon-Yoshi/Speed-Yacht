@@ -244,7 +244,35 @@ function beginRoundSummary() {
     };
   });
   broadcastState();
-  roundTimer = setTimeout(() => showRoundIntro(), ROUND_SUMMARY_MS);
+  // Hold here rather than auto-advancing if anyone is currently
+  // disconnected — this is the actual point of showing connection
+  // status and a removal option on this screen at all: giving the
+  // room time to notice, remind someone out loud, and let them
+  // actually get back in before the game moves on without them. The
+  // default 5s+2s summary/intro window is nowhere near long enough for
+  // that on its own. maybeResumeRoundSummary() (called from both the
+  // reconnect path and the host-removal path) is what actually starts
+  // this timer once everyone's genuinely accounted for.
+  if (!state.players.some(p => !p.connected)) {
+    roundTimer = setTimeout(() => showRoundIntro(), ROUND_SUMMARY_MS);
+  }
+}
+
+// Called after a reconnect or a host removal — if the round summary
+// screen is currently paused waiting on a disconnected player and
+// everyone is now accounted for, actually start the transition timer.
+// Gives the full normal ROUND_SUMMARY_MS from THIS point, not
+// whatever's left of it — nobody should get a shortened look at the
+// summary just because someone else took a while to reconnect.
+function maybeResumeRoundSummary() {
+  if (!state.game || state.game.gameOver) return;
+  if (roundTimer) return; // already running, not paused
+  if (state.players.some(p => !p.connected)) return; // still waiting on someone else
+  if (state.game.roundPhase === 'summary') {
+    roundTimer = setTimeout(() => showRoundIntro(), ROUND_SUMMARY_MS);
+  } else if (state.game.roundPhase === 'intro') {
+    roundTimer = setTimeout(() => finishRoundSummary(), ROUND_INTRO_MS);
+  }
 }
 
 // Second phase of the transition — "…and now Round X of 13" — replacing
@@ -257,7 +285,15 @@ function showRoundIntro() {
   if (!state.game || state.game.gameOver) return;
   state.game.roundPhase = 'intro';
   broadcastState();
-  roundTimer = setTimeout(() => finishRoundSummary(), ROUND_INTRO_MS);
+  // Same reasoning as beginRoundSummary() — don't advance out from
+  // under a disconnected player. This only fires once nobody's
+  // disconnected in the first place (the disconnect handler cancels
+  // roundTimer directly if someone drops while already in 'intro'),
+  // but guard it here too for the same instant-disconnect edge case
+  // beginRoundSummary() has to guard against.
+  if (!state.players.some(p => !p.connected)) {
+    roundTimer = setTimeout(() => finishRoundSummary(), ROUND_INTRO_MS);
+  }
 }
 
 function finishRoundSummary() {
@@ -377,6 +413,7 @@ io.on('connection', (socket) => {
       existing.connected = true;
       socket.emit('joined', { id: socket.id, isHost: wasHost });
       broadcastState();
+      maybeResumeRoundSummary();
       return;
     }
 
@@ -660,7 +697,10 @@ io.on('connection', (socket) => {
     }
     if (player.disconnectTimer) { clearTimeout(player.disconnectTimer); player.disconnectTimer = null; }
     removePlayer(playerId);
-    if (state.game && !state.game.gameOver) maybeAdvanceWhenReady();
+    if (state.game && !state.game.gameOver) {
+      maybeAdvanceWhenReady();
+      maybeResumeRoundSummary();
+    }
     socket.emit('remove_player_result', { success: true });
   });
 
@@ -674,6 +714,22 @@ io.on('connection', (socket) => {
     // someone their spot mid-game). Only actually free the seat if they
     // haven't come back by the time the grace period runs out.
     player.connected = false;
+    // If the round-summary screen is currently showing WITH its
+    // transition timer already running (the common case — someone
+    // disconnects a moment after the round already ended, not right at
+    // the instant it does), cancel it now that they're gone. Without
+    // this, the summary-phase check in beginRoundSummary() only ever
+    // catches someone who was ALREADY disconnected the instant the
+    // round ended — it does nothing for a disconnect that happens a
+    // few seconds into an already-running summary screen, which is the
+    // far more common real case (confirmed via direct testing: exactly
+    // this sequence — round ends normally, timer starts, THEN someone
+    // disconnects — sailed straight through to the next round anyway
+    // without this).
+    if (state.game && (state.game.roundPhase === 'summary' || state.game.roundPhase === 'intro') && roundTimer) {
+      clearTimeout(roundTimer);
+      roundTimer = null;
+    }
     broadcastState();
     const graceMs = state.phase === 'playing' ? RECONNECT_GRACE_MS : LOBBY_RECONNECT_GRACE_MS;
     player.disconnectTimer = setTimeout(() => {
